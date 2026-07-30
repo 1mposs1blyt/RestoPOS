@@ -4,24 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Статус репозитория
 
-Развёрнут каркас монорепо (pnpm workspaces): два Tauri v2 + React приложения в `apps/`
-и три пакета в `packages/`. Бэкенда нет — экраны работают на локальных заглушках.
-Тестов и линтера пока нет: **не выдумывай команды** (`pnpm test`, `pnpm lint`) —
-их нужно сначала завести.
+Развёрнут каркас монорепо (pnpm workspaces): в `apps/` — два Tauri v2 + React
+фронтенда (`desktop`, `mobile`) и бэкенд (`backend`), в `packages/` — три пакета.
+Фронтенды пока работают на локальных заглушках (`DEMO_TABLES`, `DEMO_ORDERS`) —
+к `backend` они ещё не подключены. Бэкенд — база: Fastify + PostgreSQL + socket.io,
+эндпоинты-примеры (`orders`, `warehouse`, `health`), аутентификация — dev-заглушка
+(см. `apps/backend/README.md`). Тестов и линтера нет: **не выдумывай команды**
+(`pnpm test`, `pnpm lint`) — их нужно сначала завести.
 
 ```bash
 pnpm install
-pnpm typecheck          # tsc --noEmit по всем 5 проектам
+pnpm typecheck          # tsc --noEmit по всем проектам (включая backend)
 pnpm build:web          # vite build обоих фронтендов
-pnpm dev:desktop        # tauri dev (требует Rust)
-pnpm --filter @restopos/desktop dev   # только фронтенд, работает без Rust
+pnpm dev:backend        # tsx watch — REST+WS на :3000
+pnpm dev:desktop        # tauri dev
+pnpm --filter @restopos/desktop dev   # только фронтенд, без Tauri-обвязки
 ```
 
-**Rust в этом окружении не установлен.** Поэтому любая команда `tauri` (включая
-`tauri android init`) падает на `cargo metadata: program not found`, а каталоги
-`apps/mobile/src-tauri/gen/android` и `gen/apple` не сгенерированы. Порядок действий
-описан в `apps/mobile/MOBILE_TARGETS.md`. iOS на Windows недоступен в принципе —
-подкоманды `ios` в CLI на этой платформе нет.
+### Окружение этой машины
+
+Отличается от того, где каркас разворачивался изначально (Windows без Rust), —
+`apps/mobile/MOBILE_TARGETS.md` в этой части устарел (пути `C:\...`, PowerShell,
+«Rust не установлен»). Фактически:
+
+- ОС — **Linux (Asahi Fedora) на aarch64** (Apple Silicon под Linux, не macOS).
+- `pnpm` **не в PATH**: поднимается через corepack — `corepack pnpm <cmd>`
+  (даёт `pnpm@10.33.0` из `packageManager`); разово можно `corepack enable`.
+- **Rust установлен** (1.95): команды `tauri` рабочие, desktop собирается нативно,
+  Linux-зависимости Tauri (`webkit2gtk-4.1`) на месте.
+- Android SDK стоит (`ANDROID_HOME`), но `apps/mobile/src-tauri/gen/{android,apple}`
+  ещё не сгенерированы — их создаёт `tauri android init` (шаги в `MOBILE_TARGETS.md`
+  верны по сути, переменные окружения выставлять по-линуксовому).
+- **iOS по-прежнему невозможен**: нужен macOS с Xcode; на Linux подкоманды `ios`
+  в CLI нет.
 
 Документация проекта ведётся на русском — придерживайся этого языка в README, комментариях
 и сообщениях коммитов.
@@ -44,6 +59,23 @@ Path-алиасы живут в `tsconfig.base.json`, от которого на
 чтобы обе кассы поднимались одновременно. Они продублированы в `devUrl`
 внутри `src-tauri/tauri.conf.json`, менять надо в обоих местах.
 
+### Бэкенд (`apps/backend`)
+
+Fastify + `pg` + socket.io, запуск через `tsx` (шага сборки нет, как у пакетов).
+Отдельный от фронтендов tsconfig: `lib` без DOM, `types: ["node"]` — не наследуй
+браузерный `lib` из base напрямую. Зависит от `@restopos/shared-types` (типы домена,
+`EVENT_TOPICS`), но **не** от `api-client` (тот тянет axios/браузер). Из-за этого два
+контракта продублированы и обязаны совпадать с клиентом руками:
+
+- `roomName(venueId, kind)` в `realtime/rooms.ts` — байт-в-байт как в
+  `packages/api-client/src/types.ts`, иначе подписки клиента промахиваются мимо комнат;
+- коды ошибок 403 (`feature_not_available`, `quota_exceeded`) в `http/errors.ts` —
+  ровно те, что различает `ApiError.isFeatureLocked` / `isQuotaExceeded` на клиенте.
+
+`src/db/schema.sql` — каноническая схема (дублирует DDL из `README.md`) плюс сид
+тарифов; инструмента миграций пока нет. Аутентификация — заглушка (`AUTH_DEV_BYPASS`,
+контекст из заголовков `x-org-id`/`x-venue-id`/…). Подробности — в `apps/backend/README.md`.
+
 ## Что это
 
 Кассовая система для общепита (аналог iiko Front). Ключевая продуктовая идея: **один код,
@@ -51,8 +83,9 @@ Path-алиасы живут в `tsconfig.base.json`, от которого на
 архитектуры, схема БД и дорожная карта — в `README.md`; ниже только то, что определяет
 принимаемые в коде решения.
 
-Стек по README: Node.js + TypeScript (Fastify/Express), PostgreSQL, Socket.io, React
-(касса/зал и KDS), React Native (мобильные), BullMQ + Redis.
+Стек по README: Node.js + TypeScript (Fastify), PostgreSQL, Socket.io, React везде —
+и на кассе/зале с KDS, и в мобильном приложении официанта (оба клиента на Tauri v2,
+не React Native), плюс BullMQ + Redis для очередей.
 
 ## Архитектурные инварианты
 

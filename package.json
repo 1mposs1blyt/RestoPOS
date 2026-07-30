@@ -7,6 +7,8 @@
     "node": ">=20"
   },
   "scripts": {
+    "dev": "pnpm --filter \"./apps/*\" --parallel dev",
+    "dev:backend": "pnpm --filter @restopos/backend dev",
     "dev:desktop": "pnpm --filter @restopos/desktop tauri dev",
     "dev:mobile": "pnpm --filter @restopos/mobile tauri dev",
     "android:dev": "pnpm --filter @restopos/mobile tauri android dev",

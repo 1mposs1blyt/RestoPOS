@@ -1,0 +1,73 @@
+name: Android Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+
+# Собираем только по ручному запуску или по метке в сообщении коммита —
+# чтобы обычные пуши не гоняли долгую нативную сборку.
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.head_commit.message, '[RUN]') ||
+      contains(github.event.head_commit.message, '[BUILD]')
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # pnpm ставим ДО setup-node, чтобы включить кэш pnpm-store.
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        # Версия берётся из поля "packageManager" в package.json (pnpm@10.33.0).
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Setup Java JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      # Android SDK предустановлен на ubuntu-latest; Tauri нужен путь к NDK.
+      - name: Expose NDK path
+        run: echo "NDK_HOME=$ANDROID_NDK_LATEST_HOME" >> "$GITHUB_ENV"
+
+      - name: Setup Rust (stable + Android targets)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+
+      # Кэш скомпилированного Rust — иначе каждая сборка компилит крейт с нуля.
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/mobile/src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # gen/android не в гите (см. .gitignore и MOBILE_TARGETS.md) — генерируем в CI.
+      - name: Tauri Android init
+        run: pnpm --filter @restopos/mobile tauri android init
+
+      # Debug-сборка: APK подписывается debug-ключом, отдельный keystore не нужен.
+      # Собираем под arm64 (реальные устройства) — быстрее, чем все 4 архитектуры.
+      # tauri сам вызовет beforeBuildCommand (pnpm build → vite build фронтенда).
+      - name: Build Android APK (debug, arm64)
+        run: pnpm --filter @restopos/mobile tauri android build --debug --apk --target aarch64
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: restopos-mobile-debug-apk
+          path: apps/mobile/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
