@@ -1,0 +1,47 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# builds
+dist/
+dist-ssr/
+build/
+*.tsbuildinfo
+
+# rust / tauri
+target/
+apps/*/src-tauri/target/
+src-tauri/target/
+apps/*/src-tauri/gen/schemas/
+
+# tauri mobile generated projects
+# (android/ и ios/ генерируются командой `tauri android init` / `tauri ios init`.
+#  Их принято коммитить, если в них есть ручные правки — иконки, permissions,
+#  signing config. Пока правок нет, держим их вне git и генерируем локально.)
+apps/mobile/src-tauri/gen/android/
+apps/mobile/src-tauri/gen/apple/
+
+# android
+*.keystore
+*.jks
+local.properties
+.gradle/
+
+# ios / macos
+*.xcuserstate
+xcuserdata/
+Pods/
+.DS_Store
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+
+# editors / logs
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.log
+npm-debug.log*
+pnpm-debug.log*

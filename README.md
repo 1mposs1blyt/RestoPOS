@@ -7,6 +7,8 @@
 ## Содержание
 
 - [Стек технологий](#стек-технологий)
+- [Структура монорепо](#структура-монорепо)
+- [Разработка](#разработка)
 - [Общая архитектура](#общая-архитектура)
 - [Модель тарифов и feature-flags](#модель-тарифов-и-feature-flags)
 - [Схема базы данных](#схема-базы-данных)
@@ -24,11 +26,87 @@
 | Backend | Node.js + TypeScript, Fastify/Express |
 | БД | PostgreSQL |
 | Real-time | WebSocket (Socket.io) |
-| Frontend (касса/зал) | React (планшет/браузер) |
+| Касса/зал (desktop) | Tauri v2 + React + TS |
+| Приложение официанта/курьера | Tauri v2 + React + TS (Android/iOS) |
 | Frontend (кухня) | React, отдельный "вид" (KDS) |
-| Мобильные приложения | React Native (доставка, курьер, владелец-аналитика) |
+| Стили | Tailwind CSS v4 |
+| Пакетный менеджер | pnpm workspaces |
 | Очереди/фоновые задачи | BullMQ + Redis |
 | Кэш и сессии | Redis |
+
+Клиенты собраны на Tauri v2, а не на Electron/React Native: одна кодовая база
+на React переиспользуется и в desktop-кассе, и в мобильном приложении, при этом
+остаётся доступ к нативному слою на Rust — он нужен для работы с фискальным
+оборудованием и serial-портами.
+
+## Структура монорепо
+
+```
+RestoPOS/
+├── apps/
+│   ├── desktop/          # касса: Tauri v2 + React (kiosk, чеки, ФР, serial)
+│   │   └── src-tauri/    # нативная часть на Rust
+│   └── mobile/           # официант/курьер: Tauri v2 + React (Android/iOS)
+│       ├── src-tauri/
+│       └── MOBILE_TARGETS.md   # как сгенерировать android/ и ios/
+├── packages/
+│   ├── shared-types/     # TS-типы сущностей домена, без рантайма
+│   ├── api-client/       # ApiClient: REST (axios) + realtime (socket.io)
+│   └── ui-kit/           # общие React-компоненты на Tailwind
+├── pnpm-workspace.yaml
+└── tsconfig.base.json    # общие compilerOptions + path-алиасы
+```
+
+Пакеты подключаются как `workspace:*` и экспортируют **исходники**
+(`exports` → `src/index.ts`), без шага сборки: Vite транспилирует их сам,
+правки подхватываются через HMR. Отсюда два следствия:
+
+- в `vite.config.ts` каждого приложения пакеты перечислены в `optimizeDeps.exclude`;
+- в CSS-точке входа стоит `@source "../../../packages/ui-kit/src"` — без этого
+  Tailwind v4 не увидит классы, которые лежат вне каталога приложения.
+
+Импорт из приложений — по имени пакета:
+
+```ts
+import type { Order } from "@restopos/shared-types";
+import { ApiClient } from "@restopos/api-client";
+import { Button, OrderCard } from "@restopos/ui-kit";
+```
+
+## Разработка
+
+Требуется Node.js ≥ 20, pnpm ≥ 10 и **Rust** (для любой команды `tauri`).
+
+```bash
+pnpm install
+
+# только фронтенд в браузере — работает без Rust
+pnpm --filter @restopos/desktop dev     # http://localhost:1420
+pnpm --filter @restopos/mobile dev      # http://localhost:1430
+
+# полноценные приложения (нужен Rust)
+pnpm dev:desktop                        # tauri dev
+pnpm dev:mobile
+
+# мобильные таргеты (нужен Android SDK/NDK; iOS — только на macOS)
+pnpm android:init
+pnpm android:dev
+
+# проверки и сборка
+pnpm typecheck                          # tsc --noEmit по всем пакетам
+pnpm build:desktop                      # tauri build → инсталлятор
+```
+
+Адрес бэкенда задаётся переменной `VITE_API_URL` (по умолчанию
+`http://localhost:3000`), см. `apps/*/src/api.ts`.
+
+**Kiosk-режим.** В `apps/desktop/src-tauri/tauri.conf.json` окно намеренно
+оставлено обычным — иначе разработка идёт в залипшем полноэкранном окне.
+Для боевого терминала выставить `"fullscreen": true` и `"decorations": false`.
+
+**Мобильные таргеты не сгенерированы**: `src-tauri/gen/android` и `gen/apple`
+создаются командой `tauri android init` / `tauri ios init` и требуют Rust.
+Подробности — в [apps/mobile/MOBILE_TARGETS.md](apps/mobile/MOBILE_TARGETS.md).
 
 ## Общая архитектура
 

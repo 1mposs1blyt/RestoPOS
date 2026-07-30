@@ -1,0 +1,10 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# pnpm 10 не запускает postinstall-скрипты зависимостей без явного разрешения.
+# esbuild (через Vite) и Tauri CLI скачивают нативные бинарники именно в postinstall —
+# без этого списка dev-сервер и сборка падают.
+onlyBuiltDependencies:
+  - esbuild
+  - "@tauri-apps/cli"
