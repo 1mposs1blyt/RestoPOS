@@ -1,5 +1,5 @@
 import type { Money, Order } from "@restopos/shared-types";
-import { cn } from "./cn";
+import { cn } from "../cn";
 import { OrderStatusBadge } from "./OrderStatusBadge";
 
 export interface OrderCardProps {

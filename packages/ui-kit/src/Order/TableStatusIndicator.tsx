@@ -1,5 +1,5 @@
 import type { TableStatus } from "@restopos/shared-types";
-import { cn } from "./cn";
+import { cn } from "../cn";
 
 export interface TableStatusIndicatorProps {
   label: string;

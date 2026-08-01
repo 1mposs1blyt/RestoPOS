@@ -4,3 +4,17 @@
    поэтому его каталог нужно указать явно — иначе классы компонентов
    не попадут в итоговый CSS. */
 @source "../../../packages/ui-kit/src";
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root, #app {
+  margin: 0 !important;
+  padding: 0 !important;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* полностью отключает скроллбары */
+}

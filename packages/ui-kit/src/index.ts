@@ -1,12 +1,14 @@
 export { cn } from "./cn";
-export { Button } from "./Button";
+export { Button } from "./small/Button";
+export {AuthForm} from "./Auth/AuthForm"
+export {NumKeyboard} from "./medium/NumKeyboard"
 export type { ButtonProps, ButtonSize, ButtonVariant } from "./Button";
-export { OrderCard } from "./OrderCard";
-export type { OrderCardProps } from "./OrderCard";
-export { OrderStatusBadge, OrderItemStatusBadge } from "./OrderStatusBadge";
+export { OrderCard } from "./Order/OrderCard";
+export type { OrderCardProps } from "./Order/OrderCard";
+export { OrderStatusBadge, OrderItemStatusBadge } from "./Order/OrderStatusBadge";
 export type {
   OrderStatusBadgeProps,
   OrderItemStatusBadgeProps,
-} from "./OrderStatusBadge";
-export { TableStatusIndicator } from "./TableStatusIndicator";
-export type { TableStatusIndicatorProps } from "./TableStatusIndicator";
+} from "./Order/OrderStatusBadge";
+export { TableStatusIndicator } from "./Order/TableStatusIndicator";
+export type { TableStatusIndicatorProps } from "./Order/TableStatusIndicator";

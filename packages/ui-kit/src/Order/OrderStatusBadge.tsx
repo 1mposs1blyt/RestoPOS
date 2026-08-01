@@ -1,5 +1,5 @@
 import type { OrderItemStatus, OrderStatus } from "@restopos/shared-types";
-import { cn } from "./cn";
+import { cn } from "../cn";
 
 const ORDER_STATUS: Record<OrderStatus, { label: string; className: string }> = {
   open: { label: "Открыт", className: "bg-slate-200 text-slate-800" },
