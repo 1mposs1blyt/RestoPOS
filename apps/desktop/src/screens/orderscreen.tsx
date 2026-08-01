@@ -1,87 +1,148 @@
-import { useState } from "react";
+// src/screens/orderscreen.tsx
+import React, { useState } from 'react';
 
-export function OrderScreen() {
-  const [category, setCategory] = useState("Горячее");
+interface OrderScreenProps {
+  tableId: string;
+  onBackToScheme: () => void;
+}
+
+// Заглушка данных для демонстрации интерфейса меню
+const MOCK_CATEGORIES = ['Популярное', 'Супы', 'Горячее', 'Напитки', 'Десерты'];
+const MOCK_ITEMS = [
+  { id: '1', name: 'Борщ с говядиной', price: 420, cat: 'Супы' },
+  { id: '2', name: 'Стейк Рибай', price: 1500, cat: 'Горячее' },
+  { id: '3', name: 'Морс клюквенный', price: 150, cat: 'Напитки' },
+  { id: '4', name: 'Фо-Бо', price: 480, cat: 'Супы' },
+  { id: '5', name: 'Медовик', price: 320, cat: 'Десерты' },
+];
+
+interface OrderItem {
+  id: string;
+  name: string;
+  price: number;
+  quantity: number;
+}
+
+export const OrderScreen: React.FC<OrderScreenProps> = ({ tableId, onBackToScheme }) => {
+  const [activeCategory, setActiveCategory] = useState('Популярное');
+  const [cart, setCart] = useState<OrderItem[]>([]);
+
+  // Добавление блюда в корзину стола
+  const addToCart = (item: typeof MOCK_ITEMS[0]) => {
+    setCart(prev => {
+      const existing = prev.find(i => i.id === item.id);
+      if (existing) {
+        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+      }
+      return [...prev, { ...item, quantity: 1 }];
+    });
+  };
+
+  // Расчет суммы чека
+  const totalSum = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+
   return (
-    <div className="w-screen h-screen bg-[#1e2530] text-white flex overflow-hidden select-none">
+    <div className="w-full h-full flex bg-slate-900 text-slate-100 p-4 gap-4 overflow-hidden select-none">
       
-      {/* ЛЕВАЯ ПАНЕЛЬ: КОРЗИНА ЗАКАЗА (35% ширины) */}
-      <div className="w-[35%] border-r border-slate-700 flex flex-col bg-slate-900">
-        {/* Инфо о столе */}
-        <div className="p-4 border-b border-slate-700 bg-slate-800/50 flex justify-between items-center">
+      {/* ЛЕВАЯ ЧАСТЬ: ТЕКУЩИЙ ЗАКАЗ (ЧЕК СТОЛА) */}
+      <div className="w-96 flex flex-col bg-slate-950 rounded-2xl border border-slate-800/80 shadow-2xl overflow-hidden shrink-0">
+        {/* Шапка заказа */}
+        <div className="p-4 bg-slate-900 border-b border-slate-800 flex justify-between items-center">
           <div>
-            <h2 className="text-xl font-black">Стол 2</h2>
-            <p className="text-xs text-slate-400">Гостей: 2 • Официант: Иван П.</p>
+            <h3 className="font-black text-lg text-emerald-400">Стол #{tableId.split('_')[1] || tableId}</h3>
+            <span className="text-xs text-slate-500">Новый заказ</span>
           </div>
-          <button className="bg-slate-700 hover:bg-slate-600 px-3 py-1.5 rounded-lg text-sm font-bold">Выйти</button>
+          <button 
+            onClick={onBackToScheme}
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-xs font-semibold rounded-lg transition border border-slate-700/50"
+          >
+            ← В зал
+          </button>
         </div>
 
-        {/* Список добавленных блюд со скроллом */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          <div className="flex justify-between items-start border-b border-slate-800 pb-2">
-            <div>
-              <div className="font-bold text-base">1. Суп Борщ Украинский</div>
-              <div className="text-xs text-amber-400 ml-3">• со сметаной</div>
+        {/* Список блюд в чеке */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {cart.length === 0 ? (
+            <div className="h-full flex flex-col items-center justify-center text-slate-600">
+              <span className="text-3xl mb-2">📝</span>
+              <p className="text-xs">Заказ пуст. Выберите блюда.</p>
             </div>
-            <div className="text-right">
-              <div className="font-mono text-sm">2 x 350 ₽</div>
-              <div className="font-bold text-sm text-slate-300">700 ₽</div>
-            </div>
-          </div>
-          {/* Конец списка блюд */}
+          ) : (
+            cart.map(item => (
+              <div key={item.id} className="flex justify-between items-center bg-slate-900 p-3 rounded-xl border border-slate-800/60">
+                <div className="flex flex-col max-w-[180px]">
+                  <span className="font-medium text-sm truncate">{item.name}</span>
+                  <span className="text-xs text-slate-500">{item.price} ₽</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-bold bg-slate-800 px-2 py-0.5 rounded text-orange-400">x{item.quantity}</span>
+                  <span className="font-bold text-sm min-w-[60px] text-right">{item.price * item.quantity} ₽</span>
+                </div>
+              </div>
+            ))
+          )}
         </div>
 
-        {/* Футер корзины с кнопкой оплаты */}
-        <div className="p-4 bg-slate-850 border-t border-slate-700 space-y-4">
-          <div className="flex justify-between text-xl font-black">
+        {/* Итог и Кнопки действий */}
+        <div className="p-4 bg-slate-900 border-t border-slate-800 space-y-3">
+          <div className="flex justify-between items-center text-lg font-black px-1">
             <span>ИТОГО:</span>
-            <span className="font-mono text-amber-400">700 ₽</span>
+            <span className="text-emerald-400 text-xl">{totalSum} ₽</span>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <button className="bg-slate-700 hover:bg-slate-600 py-3 rounded-xl font-bold">Пречек</button>
-            <button className="bg-emerald-600 hover:bg-emerald-500 py-3 rounded-xl font-black text-white shadow-lg">ОПЛАТА</button>
+            <button className="py-3 bg-slate-800 hover:bg-slate-700 font-bold text-xs rounded-xl transition border border-slate-700 active:scale-95 text-slate-300">
+              Пречек
+            </button>
+            <button 
+              disabled={cart.length === 0}
+              className="py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 disabled:pointer-events-none font-bold text-xs text-white rounded-xl transition shadow-lg shadow-emerald-900/20 active:scale-95"
+            >
+              Отправить на кухню
+            </button>
           </div>
         </div>
       </div>
 
-      {/* ПРАВАЯ ПАНЕЛЬ: КАТЕГОРИИ И СЕТКА БЛЮД (65% ширины) */}
-      <div className="flex-1 flex flex-col p-4 bg-[#1e2530]">
-        {/* Горизонтальный скролл категорий */}
-        <nav className="flex gap-2 overflow-x-auto pb-4 border-b border-slate-700 mb-4">
-          {["Популярное", "Холодные закуски", "Горячее", "Супы", "Десерты", "Бар"].map((cat) => (
+      {/* ПРАВАЯ ЧАСТЬ: МЕНЮ (КАТЕГОРИИ И БЛЮДА) */}
+      <div className="flex-1 flex flex-col gap-4 overflow-hidden">
+        {/* Горизонтальный выбор категорий */}
+        <div className="flex gap-2 overflow-x-auto pb-1 shrink-0 scrollbar-none">
+          {MOCK_CATEGORIES.map(cat => (
             <button
               key={cat}
-              onClick={() => setCategory(cat)}
-              className={`px-5 py-3 rounded-xl font-bold whitespace-nowrap transition ${
-                category === cat ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-400 hover:bg-slate-700"
+              onClick={() => setActiveCategory(cat)}
+              className={`px-5 py-3 rounded-xl font-bold text-xs tracking-wider uppercase transition whitespace-nowrap border active:scale-95 ${
+                activeCategory === cat
+                  ? 'bg-orange-500 text-white border-transparent shadow-md shadow-orange-500/10'
+                  : 'bg-slate-800 text-slate-400 border-slate-700/50 hover:bg-slate-700/60'
               }`}
             >
               {cat}
             </button>
           ))}
-        </nav>
+        </div>
 
-        {/* Сетка товаров (CSS Grid) литые плитки с ценами */}
-        <div className="flex-1 grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto">
-          {[
-            { name: "Стейк Рибай", price: 1200 },
-            { name: "Шашлык свиной", price: 550 },
-            { name: "Паста Карбонара", price: 480 },
-            { name: "Пюре с котлетой", price: 320 },
-            { name: "Куриные крылья", price: 420 },
-            { name: "Овощи гриль", price: 280 }
-          ].map((dish, i) => (
-            <button
-              key={i}
-              className="bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-xl p-4 flex flex-col justify-between items-start text-left aspect-square shadow-sm transition active:scale-97"
-            >
-              <div className="text-lg font-bold leading-tight">{dish.name}</div>
-              <div className="text-xl font-black text-blue-400 font-mono">{dish.price} ₽</div>
-            </button>
-          ))}
+        {/* Сетка блюд */}
+        <div className="flex-1 overflow-y-auto grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 content-start pr-1">
+          {MOCK_ITEMS
+            .filter(item => activeCategory === 'Популярное' || item.cat === activeCategory)
+            .map(item => (
+              <button
+                key={item.id}
+                onClick={() => addToCart(item)}
+                className="h-28 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/40 hover:border-slate-600/80 rounded-2xl p-4 flex flex-col justify-between items-start text-left transition shadow-sm active:scale-95 group"
+              >
+                <span className="font-bold text-sm leading-tight text-slate-200 group-hover:text-white transition-colors">
+                  {item.name}
+                </span>
+                <span className="font-black text-sm text-orange-400 bg-slate-950/40 px-2 py-0.5 rounded-lg border border-slate-800/40">
+                  {item.price} ₽
+                </span>
+              </button>
+            ))}
         </div>
       </div>
 
     </div>
   );
-}
+};

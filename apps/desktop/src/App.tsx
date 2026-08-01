@@ -1,59 +1,107 @@
-import { useState } from "react";
-import { AuthScreen } from "./screens/auth";
-import { KitchenScreen } from "./screens/kitchenscreen";
-import { TableScheme } from "./screens/tablescheme";
+// src/App.tsx
+import React, { useState } from 'react';
+import { OrderScreen } from './screens/orderscreen';
+import { AuthScreen } from './screens/auth';
+// import { KitchenScreen } from './screens/kitchenscreen'; // Раскомментируйте, когда добавите kds
+import { TableScheme } from './screens/tablescheme';
+type ScreenType = 'auth' | 'layout' | 'order' | 'kitchen';
 
-// Задаем типы возможных экранов
-type ScreenType = "auth" | "layout" | "kitchen";
+export const App: React.FC = () => {
+  const [currentScreen, setCurrentScreen] = useState<ScreenType>('layout'); 
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  
+  // Состояние для пин-кода (передается в контролируемый AuthScreen)
+  const [pinValue, setPinValue] = useState<string>('');
 
-function App() {
-  // Начальный экран — авторизация
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>("auth");
+  // Обработчик клика по столу на схеме зала
+  const handleTableSelect = (tableId: string) => {
+    setSelectedTableId(tableId);
+    setCurrentScreen('order'); // Автопереключение на экран заказа
+  };
+
+  // Возврат из меню обратно на схему зала
+  const handleBackToScheme = () => {
+    setSelectedTableId(null);
+    setCurrentScreen('layout');
+  };
+
+  // Обработчик успешного ввода пин-кода
+  const handleAuthComplete = (pin: string) => {
+    console.log("ПИН-код отправлен на проверку:", pin);
+    // Имитация успешной авторизации — пускаем в зал
+    setCurrentScreen('layout');
+    setPinValue(''); // Сбрасываем поле ввода
+  };
 
   return (
-    <main className="relative min-h-screen w-screen bg-[#1e2530] overflow-hidden">
+    <div className="w-screen h-screen bg-slate-900 text-white overflow-hidden relative">
       
-      {/* 1. ПАНЕЛЬ НАВИГАЦИИ (Висит поверх всех экранов) */}
-      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 backdrop-blur-md px-4 py-2.5 rounded-2xl flex gap-2 border border-slate-700 shadow-2xl">
-        <button
-          onClick={() => setCurrentScreen("auth")}
-          className={`px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider transition ${
-            currentScreen === "auth"
-              ? "bg-blue-500 text-white shadow-md"
-              : "text-slate-400 hover:text-white"
+      {/* Глобальный плавающий навигационный бар (из выжимки) */}
+      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-800 shadow-2xl z-50 flex gap-2">
+        <button 
+          onClick={() => setCurrentScreen('auth')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+            currentScreen === 'auth' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:bg-slate-800'
           }`}
         >
-          🔐 Вход
+          🔐 Блокировка
         </button>
-        <button
-          onClick={() => setCurrentScreen("layout")}
-          className={`px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider transition ${
-            currentScreen === "layout"
-              ? "bg-blue-500 text-white shadow-md"
-              : "text-slate-400 hover:text-white"
+        <button 
+          onClick={() => setCurrentScreen('layout')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+            currentScreen === 'layout' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:bg-slate-800'
           }`}
         >
-          🪑 Зал
+          🍽️ Схема зала
         </button>
-        <button
-          onClick={() => setCurrentScreen("kitchen")}
-          className={`px-4 py-2 rounded-xl text-sm font-black uppercase tracking-wider transition ${
-            currentScreen === "kitchen"
-              ? "bg-blue-500 text-white shadow-md"
-              : "text-slate-400 hover:text-white"
+        <button 
+          onClick={() => setCurrentScreen('kitchen')}
+          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
+            currentScreen === 'kitchen' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:bg-slate-800'
           }`}
         >
-          🍳 Кухня
+          🍳 Кухня (KDS)
         </button>
-      </div>
+      </nav>
 
-      {/* 2. РЕНДЕР ТЕКУЩЕГО ЭКРАНА В ЗАВИСИМОСТИ ОТ СОСТОЯНИЯ */}
-      {currentScreen === "auth" && <AuthScreen />}
-      {currentScreen === "layout" && <TableScheme />}
-      {currentScreen === "kitchen" && <KitchenScreen />}
+      {/* Контейнер рендеринга экранов со смещением под навигацию */}
+      <main className="w-full h-full pb-20">
+        
+        {/* ЭКРАН 1: Авторизация (с плавными оранжевыми точками) */}
+        {currentScreen === 'auth' && (
+          <AuthScreen 
+            value={pinValue}
+            onChange={setPinValue}
+            maxLength={4}
+            onComplete={handleAuthComplete}
+          />
+        )}
 
-    </main>
+        {/* ЭКРАН 2: Схема зала (с localStorage и выводом клика) */}
+        {currentScreen === 'layout' && (
+          <TableScheme onTableSelect={handleTableSelect} />
+        )}
+
+        {/* ЭКРАН 3: Оформление заказа (открывается при клике на стол) */}
+        {currentScreen === 'order' && selectedTableId && (
+          <OrderScreen 
+            tableId={selectedTableId} 
+            onBackToScheme={handleBackToScheme} 
+          />
+        )}
+
+        {/* ЭКРАН 4: Монитор кухни */}
+        {currentScreen === 'kitchen' && (
+          <div className="w-full h-full flex items-center justify-center text-slate-500">
+            <div className="text-center">
+              <span className="text-4xl">🍳</span>
+              <p className="mt-2 text-sm">Экран кухни (KDS) готов к интеграции списков.</p>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+    </div>
   );
-}
-
-export default App;
+};
