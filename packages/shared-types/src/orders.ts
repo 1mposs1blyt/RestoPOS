@@ -18,10 +18,16 @@ export interface Table {
 export interface Order {
   id: UUID;
   venueId: UUID;
+  /** `null` — заказ без стола: навынос или с прилавка. */
   tableId: UUID | null;
   shiftId: UUID;
   waiterId: UUID;
   status: OrderStatus;
+  /**
+   * Порядковый номер заказа в смене. На прилавке его называют гостю и печатают
+   * в чеке — без него выданную еду не с чем сопоставить, ведь стола нет.
+   */
+  number: number;
   createdAt: ISODateString;
   /**
    * Временный идентификатор, присвоенный терминалом в офлайне.

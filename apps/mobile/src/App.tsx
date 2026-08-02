@@ -10,6 +10,7 @@ const DEMO_ORDERS: Order[] = [
     shiftId: "s1",
     waiterId: "w1",
     status: "sent_to_kitchen",
+    number: 1,
     createdAt: new Date().toISOString(),
   },
   {
@@ -19,6 +20,7 @@ const DEMO_ORDERS: Order[] = [
     shiftId: "s1",
     waiterId: "w1",
     status: "open",
+    number: 2,
     createdAt: new Date().toISOString(),
   },
 ];

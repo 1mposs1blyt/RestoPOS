@@ -1,6 +1,7 @@
 import type {
   ISODateString,
   Money,
+  ServiceMode,
   StaffRole,
   TerminalKind,
   UUID,
@@ -11,6 +12,8 @@ export interface Venue {
   organizationId: UUID;
   name: string;
   address: string | null;
+  /** Режим обслуживания. У прилавочных заведений схемы зала нет вовсе. */
+  serviceMode: ServiceMode;
 }
 
 export interface Terminal {

@@ -1,107 +1,105 @@
-// src/App.tsx
-import React, { useState } from 'react';
-import { OrderScreen } from './screens/orderscreen';
-import { AuthScreen } from './screens/auth';
-// import { KitchenScreen } from './screens/kitchenscreen'; // Раскомментируйте, когда добавите kds
-import { TableScheme } from './screens/tablescheme';
-type ScreenType = 'auth' | 'layout' | 'order' | 'kitchen';
+import { useEffect } from "react";
+import { EntitlementsProvider, FeatureGate } from "./app/entitlements";
+import {
+  NavigationProvider,
+  defaultRouteFor,
+  routesFor,
+  useNavigation,
+} from "./app/navigation";
+import { SessionProvider, useSession } from "./app/session";
+import { AppShell } from "./layout/AppShell";
+import { OrdersProvider } from "./state/orders";
+import { TablesProvider } from "./state/tables";
+import { BlockScreen } from "./screens/blockscreen";
+import { CounterScreen } from "./screens/counterscreen";
+import { KitchenScreen } from "./screens/kitchenscreen";
+import { OrderScreen } from "./screens/orderscreen";
+import { TableScheme } from "./screens/tablescheme";
 
-export const App: React.FC = () => {
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('layout'); 
-  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
-  
-  // Состояние для пин-кода (передается в контролируемый AuthScreen)
-  const [pinValue, setPinValue] = useState<string>('');
+export const App = () => (
+  <SessionProvider>
+    <EntitlementsProvider>
+      <Terminal />
+    </EntitlementsProvider>
+  </SessionProvider>
+);
 
-  // Обработчик клика по столу на схеме зала
-  const handleTableSelect = (tableId: string) => {
-    setSelectedTableId(tableId);
-    setCurrentScreen('order'); // Автопереключение на экран заказа
-  };
+/**
+ * Корень терминала.
+ *
+ * Провайдеры данных живут внутри разблокированной сессии: смена терминала
+ * закрывается вместе с ней, а состояние переживает блокировку в localStorage
+ * (см. `lib/storage.ts`).
+ */
+function Terminal() {
+  const { isLocked, venue, shiftId, staff, terminalKind } = useSession();
 
-  // Возврат из меню обратно на схему зала
-  const handleBackToScheme = () => {
-    setSelectedTableId(null);
-    setCurrentScreen('layout');
-  };
-
-  // Обработчик успешного ввода пин-кода
-  const handleAuthComplete = (pin: string) => {
-    console.log("ПИН-код отправлен на проверку:", pin);
-    // Имитация успешной авторизации — пускаем в зал
-    setCurrentScreen('layout');
-    setPinValue(''); // Сбрасываем поле ввода
-  };
+  if (isLocked) {
+    return <BlockScreen />;
+  }
 
   return (
-    <div className="w-screen h-screen bg-slate-900 text-white overflow-hidden relative">
-      
-      {/* Глобальный плавающий навигационный бар (из выжимки) */}
-      <nav className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-slate-950/80 backdrop-blur-md px-4 py-2 rounded-2xl border border-slate-800 shadow-2xl z-50 flex gap-2">
-        <button 
-          onClick={() => setCurrentScreen('auth')}
-          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
-            currentScreen === 'auth' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:bg-slate-800'
-          }`}
+    <TablesProvider venueId={venue.id}>
+      <OrdersProvider
+        venueId={venue.id}
+        shiftId={shiftId}
+        waiterId={staff?.id ?? null}
+      >
+        <NavigationProvider
+          initialRoute={defaultRouteFor(terminalKind, venue.serviceMode)}
         >
-          🔐 Блокировка
-        </button>
-        <button 
-          onClick={() => setCurrentScreen('layout')}
-          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
-            currentScreen === 'layout' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:bg-slate-800'
-          }`}
-        >
-          🍽️ Схема зала
-        </button>
-        <button 
-          onClick={() => setCurrentScreen('kitchen')}
-          className={`px-4 py-2 text-xs font-bold rounded-xl transition-all ${
-            currentScreen === 'kitchen' ? 'bg-orange-500 text-white' : 'text-slate-400 hover:bg-slate-800'
-          }`}
-        >
-          🍳 Кухня (KDS)
-        </button>
-      </nav>
-
-      {/* Контейнер рендеринга экранов со смещением под навигацию */}
-      <main className="w-full h-full pb-20">
-        
-        {/* ЭКРАН 1: Авторизация (с плавными оранжевыми точками) */}
-        {currentScreen === 'auth' && (
-          <AuthScreen 
-            value={pinValue}
-            onChange={setPinValue}
-            maxLength={4}
-            onComplete={handleAuthComplete}
-          />
-        )}
-
-        {/* ЭКРАН 2: Схема зала (с localStorage и выводом клика) */}
-        {currentScreen === 'layout' && (
-          <TableScheme onTableSelect={handleTableSelect} />
-        )}
-
-        {/* ЭКРАН 3: Оформление заказа (открывается при клике на стол) */}
-        {currentScreen === 'order' && selectedTableId && (
-          <OrderScreen 
-            tableId={selectedTableId} 
-            onBackToScheme={handleBackToScheme} 
-          />
-        )}
-
-        {/* ЭКРАН 4: Монитор кухни */}
-        {currentScreen === 'kitchen' && (
-          <div className="w-full h-full flex items-center justify-center text-slate-500">
-            <div className="text-center">
-              <span className="text-4xl">🍳</span>
-              <p className="mt-2 text-sm">Экран кухни (KDS) готов к интеграции списков.</p>
-            </div>
-          </div>
-        )}
-
-      </main>
-
-    </div>
+          <AppShell>
+            <CurrentScreen />
+          </AppShell>
+        </NavigationProvider>
+      </OrdersProvider>
+    </TablesProvider>
   );
-};
+}
+
+function CurrentScreen() {
+  const { route, reset } = useNavigation();
+  const { terminalKind, venue } = useSession();
+
+  // Инвариант №5: терминалы различаются набором экранов, а не сборкой.
+  const isAllowed = routesFor(terminalKind, venue.serviceMode).includes(
+    route.name,
+  );
+
+  /*
+   * Конфигурация терминала меняется под ногами: сменили тип терминала или
+   * режим заведения — и текущий маршрут перестал существовать.
+   *
+   * Приводим стек в порядок здесь, а не в обработчиках переключения. Там
+   * пришлось бы вручную сводить два независимых куска состояния, и то из них,
+   * что прочитано из устаревшего замыкания, снова роняло бы экран в заглушку
+   * «недоступен». Здесь же оба значения всегда актуальны на момент рендера,
+   * так что чинится весь класс ошибки, а не отдельный её случай.
+   */
+  useEffect(() => {
+    if (!isAllowed) reset(defaultRouteFor(terminalKind, venue.serviceMode));
+  }, [isAllowed, reset, terminalKind, venue.serviceMode]);
+
+  // Один кадр между сменой конфигурации и сбросом стека в эффекте.
+  if (!isAllowed) return null;
+
+  switch (route.name) {
+    case "hall":
+      return <TableScheme />;
+
+    case "order":
+      return <OrderScreen tableId={route.tableId} />;
+
+    case "counter":
+      return <CounterScreen />;
+
+    case "kitchen":
+      // Гейт — это UX-апсейл, а не защита: за реальный отказ отвечает
+      // `requireFeature('kds')` на бэкенде (инвариант №1).
+      return (
+        <FeatureGate feature="kds">
+          <KitchenScreen />
+        </FeatureGate>
+      );
+  }
+}
