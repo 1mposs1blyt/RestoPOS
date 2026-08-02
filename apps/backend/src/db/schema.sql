@@ -44,7 +44,11 @@ CREATE TABLE IF NOT EXISTS venues (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID REFERENCES organizations(id),
     name TEXT NOT NULL,
-    address TEXT
+    address TEXT,
+    -- 'tables'  — зал со схемой столов;
+    -- 'counter' — прилавок без столов (шаурмечная, кофейня навынос):
+    --             заказ набирают и сразу рассчитывают, гостя зовут по номеру.
+    service_mode TEXT NOT NULL DEFAULT 'tables'
 );
 CREATE INDEX IF NOT EXISTS idx_venues_org ON venues(organization_id);
 
@@ -116,14 +120,19 @@ CREATE INDEX IF NOT EXISTS idx_tables_venue ON tables(venue_id);
 CREATE TABLE IF NOT EXISTS orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     venue_id UUID REFERENCES venues(id),
+    -- NULL — заказ без стола: навынос или с прилавка.
     table_id UUID REFERENCES tables(id),
     shift_id UUID REFERENCES shifts(id),
     waiter_id UUID REFERENCES staff(id),
     status TEXT NOT NULL DEFAULT 'open',-- 'open' | 'sent_to_kitchen' | 'paid' | 'canceled'
+    -- Номер заказа в смене: на прилавке его называют гостю.
+    number INT NOT NULL,
     -- Временный id офлайн-заказа: сервер сопоставляет очередь при синхронизации,
     -- чтобы повторная отправка не создала дубль (last-write-wins на orders).
     client_id TEXT,
-    created_at TIMESTAMPTZ DEFAULT now()
+    created_at TIMESTAMPTZ DEFAULT now(),
+    -- Номер уникален в пределах смены и начинается с 1 каждую новую смену.
+    UNIQUE (shift_id, number)
 );
 CREATE INDEX IF NOT EXISTS idx_orders_venue ON orders(venue_id);
 CREATE UNIQUE INDEX IF NOT EXISTS uq_orders_client_id

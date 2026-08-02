@@ -196,7 +196,9 @@ CREATE TABLE venues (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID REFERENCES organizations(id),
     name TEXT NOT NULL,
-    address TEXT
+    address TEXT,
+    -- 'tables' — зал со схемой столов; 'counter' — прилавок без столов
+    service_mode TEXT NOT NULL DEFAULT 'tables'
 );
 
 CREATE TABLE terminals (
@@ -265,11 +267,13 @@ CREATE TABLE tables (
 CREATE TABLE orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     venue_id UUID REFERENCES venues(id),
-    table_id UUID REFERENCES tables(id),
+    table_id UUID REFERENCES tables(id), -- NULL — навынос или с прилавка
     shift_id UUID REFERENCES shifts(id),
     waiter_id UUID REFERENCES staff(id),
     status TEXT NOT NULL DEFAULT 'open', -- 'open' | 'sent_to_kitchen' | 'paid' | 'canceled'
-    created_at TIMESTAMPTZ DEFAULT now()
+    number INT NOT NULL,                 -- номер заказа в смене, зовут гостя по нему
+    created_at TIMESTAMPTZ DEFAULT now(),
+    UNIQUE (shift_id, number)
 );
 
 CREATE TABLE order_items (

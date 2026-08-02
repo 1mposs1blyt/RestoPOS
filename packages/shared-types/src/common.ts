@@ -35,6 +35,15 @@ export type TerminalKind = "pos" | "kds" | "admin";
 
 export type StaffRole = "waiter" | "cashier" | "manager" | "cook";
 
+/**
+ * Как заведение обслуживает гостей.
+ *
+ * `tables` — зал со схемой столов: заказ открывается на стол и живёт, пока
+ * гость сидит. `counter` — прилавок (шаурмечная, кофейня навынос): столов нет,
+ * заказ набирают и сразу рассчитывают, а гостя зовут по номеру.
+ */
+export type ServiceMode = "tables" | "counter";
+
 export type TableStatus = "free" | "occupied" | "reserved";
 
 export type OrderStatus = "open" | "sent_to_kitchen" | "paid" | "canceled";

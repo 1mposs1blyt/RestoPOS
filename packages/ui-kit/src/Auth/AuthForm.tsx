@@ -1,74 +1,84 @@
-import { useEffect } from "react";
+import type { ReactNode } from "react";
 import { cn } from "../cn";
-import { NumKeyboard } from "../medium/NumKeyboard";
+import { PinPad } from "./PinPad";
 
 export interface AuthFormProps {
-  /** Текущее строковое значение пин-кода (передается из родителя) */
-  value: string;
-  /** Функция обратного вызова для изменения строки ввода */
-  onChange: (newValue: string) => void;
-  /** Максимальная длина пин-кода (по умолчанию 4) */
-  maxLength?: number;
-  /** Функция, которая сработает автоматически при полном вводе кода */
-  onComplete?: (pin: string) => void;
+  /** Проверка пин-кода. Отклонённый промис = неверный пин (см. `PinPad`). */
+  onSubmit: (pin: string) => void | Promise<void>;
+  /** Название системы на брендовой половине. */
+  productName?: string;
+  /** Подпись под названием. */
+  tagline?: string;
+  /** Заголовок над точками ввода. */
+  title?: string;
+  /** Подсказка под заголовком. */
+  hint?: string;
+  /**
+   * Фоновый паттерн брендовой половины. Путь резолвится браузером,
+   * то есть должен быть от корня раздачи (`/bg-logo.webp`), а не от `public/`.
+   */
+  backgroundUrl?: string;
+  /** Произвольный контент вместо стандартного блока с названием. */
+  brand?: ReactNode;
+  length?: number;
+  error?: string | null;
+  className?: string;
 }
 
-export function AuthForm({ 
-  value = "", 
-  onChange, 
-  maxLength = 4, 
-  onComplete 
+export function AuthForm({
+  onSubmit,
+  productName = "RestoPOS",
+  tagline = "Терминал обслуживания ресторанов",
+  title = "Авторизация",
+  hint = "Введите персональный PIN-код",
+  backgroundUrl,
+  brand,
+  length = 4,
+  error,
+  className,
 }: AuthFormProps) {
-
-  // Функция обработки нажатий на кнопки клавиатуры
-  const handleKeyPress = (pressedKey: string) => {
-    if (pressedKey === "✕") {
-      // Кнопка удаления: убираем последний символ
-      onChange(value.slice(0, -1));
-    } else {
-      // Кнопка с цифрой: добавляем символ, если лимит длины не превышен
-      if (value.length < maxLength) {
-        onChange(value + pressedKey);
-      }
-    }
-  };
-
-  // Автоматический вызов onComplete при заполнении всех символов
-  useEffect(() => {
-    if (value.length === maxLength && onComplete) {
-      onComplete(value);
-    }
-  }, [value, maxLength, onComplete]);
-
   return (
-    <div className="flex w-screen h-screen overflow-hidden">
-      {/* Левая половина (Паттерн-узор) */}
-      <div
-        className="hidden md:flex md:w-1/2 shrink-0 bg-repeat bg-[length:320px] relative border-r border-gray-200"
-        style={{ backgroundImage: "url('/bg-logo.webp')" }}
-      >
-        <div className="absolute inset-0 bg-black/20" />
+    <div
+      className={cn(
+        "flex h-full w-full select-none overflow-hidden bg-slate-900 text-slate-100",
+        className,
+      )}
+    >
+      {/* Брендовая половина. На узких экранах (мобильный терминал) скрыта. */}
+      <div className="relative hidden w-1/2 shrink-0 flex-col items-center justify-center overflow-hidden bg-slate-100 p-8 md:flex">
+        {backgroundUrl && (
+          <div
+            className="absolute inset-0 bg-repeat opacity-50"
+            style={{
+              backgroundImage: `url("${backgroundUrl}")`,
+              backgroundSize: "320px",
+            }}
+          />
+        )}
+        <div className="absolute inset-0 bg-black/10" />
+
+        <div className="relative z-10 space-y-2 text-center">
+          {brand ?? (
+            <>
+              <h1 className="text-3xl font-black tracking-wider text-slate-800">
+                {productName}
+              </h1>
+              <p className="text-sm font-medium text-slate-600">{tagline}</p>
+            </>
+          )}
+        </div>
       </div>
 
-      {/* Правая половина (Форма авторизации) */}
-      <div className="w-full md:w-1/2 shrink-0 bg-[#1e2530] flex flex-col justify-center items-center gap-12 p-6 text-white">
-        
-        {/* БЛОК ДЛЯ ЛОГОТИПА И НАЗВАНИЯ */}
-        <div className="flex flex-col items-center justify-center text-center">
-          <h1 className="text-3xl font-black tracking-wider uppercase mb-1">
-            Resto_POS
-          </h1>
-          <p className="text-gray-400 text-sm">
-            Введите ваш персональный пин-код
-          </p>
+      {/* Половина с вводом пин-кода */}
+      <div className="flex w-full flex-col items-center justify-center gap-8 border-l border-slate-800/50 bg-[#1e2530] p-12 md:w-1/2">
+        <div className="space-y-1 text-center">
+          <h2 className="text-xl font-bold tracking-wide text-slate-200">
+            {title}
+          </h2>
+          <p className="text-xs text-slate-500">{hint}</p>
         </div>
 
-        {/* 
-          ПЕРЕИСПОЛЬЗУЕМАЯ КЛАВИАТУРА 
-          Она остается абсолютно независимой и "глупой"
-        */}
-        <NumKeyboard onPress={handleKeyPress} />
-        
+        <PinPad onSubmit={onSubmit} length={length} error={error} />
       </div>
     </div>
   );
