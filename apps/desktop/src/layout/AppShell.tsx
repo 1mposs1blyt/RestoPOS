@@ -7,7 +7,6 @@ import type {
 } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
-import { defaultRouteFor, useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
 
 const ROLE_LABELS: Record<StaffRole, string> = {
@@ -118,20 +117,10 @@ const SERVICE_MODE_LABELS: Record<ServiceMode, string> = {
 function DevBar() {
   const { terminalKind, setTerminalKind, venue, setServiceMode } = useSession();
   const { plan, setPlan } = useEntitlements();
-  const { reset } = useNavigation();
 
-  // Стек экранов принадлежит прежней конфигурации — сбрасываем, иначе касса
-  // может «остаться» на экране заказа внутри KDS или на схеме зала
-  // в заведении, где столов не существует.
-  const switchTerminal = (kind: TerminalKind) => {
-    setTerminalKind(kind);
-    reset(defaultRouteFor(kind, venue.serviceMode));
-  };
-
-  const switchServiceMode = (mode: ServiceMode) => {
-    setServiceMode(mode);
-    reset(defaultRouteFor(terminalKind, mode));
-  };
+  // Стек экранов здесь не трогаем: маршрут, ставший недоступным после смены
+  // конфигурации, сбрасывает `CurrentScreen` — он видит оба значения
+  // актуальными, а этот обработчик знал бы только одно из них.
 
   return (
     <div className="flex shrink-0 items-center justify-center gap-6 border border-slate-800 bg-slate-900 px-4 py-2">
@@ -140,7 +129,7 @@ function DevBar() {
           <DevButton
             key={kind}
             active={terminalKind === kind}
-            onClick={() => switchTerminal(kind)}
+            onClick={() => setTerminalKind(kind)}
           >
             {TERMINAL_LABELS[kind]}
           </DevButton>
@@ -152,7 +141,7 @@ function DevBar() {
           <DevButton
             key={mode}
             active={venue.serviceMode === mode}
-            onClick={() => switchServiceMode(mode)}
+            onClick={() => setServiceMode(mode)}
           >
             {SERVICE_MODE_LABELS[mode]}
           </DevButton>

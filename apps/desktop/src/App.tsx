@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { EntitlementsProvider, FeatureGate } from "./app/entitlements";
 import {
   NavigationProvider,
@@ -57,13 +58,30 @@ function Terminal() {
 }
 
 function CurrentScreen() {
-  const { route } = useNavigation();
+  const { route, reset } = useNavigation();
   const { terminalKind, venue } = useSession();
 
   // Инвариант №5: терминалы различаются набором экранов, а не сборкой.
-  if (!routesFor(terminalKind, venue.serviceMode).includes(route.name)) {
-    return <ScreenUnavailable />;
-  }
+  const isAllowed = routesFor(terminalKind, venue.serviceMode).includes(
+    route.name,
+  );
+
+  /*
+   * Конфигурация терминала меняется под ногами: сменили тип терминала или
+   * режим заведения — и текущий маршрут перестал существовать.
+   *
+   * Приводим стек в порядок здесь, а не в обработчиках переключения. Там
+   * пришлось бы вручную сводить два независимых куска состояния, и то из них,
+   * что прочитано из устаревшего замыкания, снова роняло бы экран в заглушку
+   * «недоступен». Здесь же оба значения всегда актуальны на момент рендера,
+   * так что чинится весь класс ошибки, а не отдельный её случай.
+   */
+  useEffect(() => {
+    if (!isAllowed) reset(defaultRouteFor(terminalKind, venue.serviceMode));
+  }, [isAllowed, reset, terminalKind, venue.serviceMode]);
+
+  // Один кадр между сменой конфигурации и сбросом стека в эффекте.
+  if (!isAllowed) return null;
 
   switch (route.name) {
     case "hall":
@@ -84,12 +102,4 @@ function CurrentScreen() {
         </FeatureGate>
       );
   }
-}
-
-function ScreenUnavailable() {
-  return (
-    <div className="flex h-full w-full items-center justify-center text-slate-600">
-      <p className="text-sm">Этот экран недоступен на текущем терминале.</p>
-    </div>
-  );
 }
