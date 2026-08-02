@@ -6,7 +6,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { ServiceMode, TerminalKind, UUID } from "@restopos/shared-types";
+import type {
+  FeatureCode,
+  Permission,
+  ServiceMode,
+  TerminalKind,
+  UUID,
+} from "@restopos/shared-types";
 
 /**
  * Маршруты кассы.
@@ -19,41 +25,122 @@ export type Route =
   | { name: "hall" }
   | { name: "order"; tableId: UUID }
   | { name: "counter" }
-  | { name: "kitchen" };
+  | { name: "kitchen" }
+  | { name: "stations" }
+  | { name: "service" };
 
 export type RouteName = Route["name"];
 
-/**
- * Какие экраны доступны терминалу. Инвариант №5: касса, KDS и админка —
- * это разный набор экранов над одним и тем же API, а не разные сборки.
- *
- * Набор зависит ещё и от режима заведения: у прилавочного (`counter`) схемы
- * зала не существует, поэтому вместо `hall`/`order` там единственный экран
- * расчёта. Это не «урезанная касса», а другой набор экранов над тем же API.
- */
-export function routesFor(
-  kind: TerminalKind,
-  serviceMode: ServiceMode,
-): RouteName[] {
-  const posRoutes: RouteName[] =
-    serviceMode === "counter" ? ["counter"] : ["hall", "order"];
-
-  switch (kind) {
-    case "pos":
-      return posRoutes;
-    case "kds":
-      return ["kitchen"];
-    case "admin":
-      return [...posRoutes, "kitchen"];
-  }
+interface RouteSpec {
+  terminals: readonly TerminalKind[];
+  /** `null` — режим обслуживания на этот экран не влияет. */
+  serviceModes: readonly ServiceMode[] | null;
+  permission: Permission;
+  /** Модуль тарифа, без которого экрана нет. */
+  feature?: FeatureCode;
 }
 
-export function defaultRouteFor(
-  kind: TerminalKind,
-  serviceMode: ServiceMode,
-): Route {
-  if (kind === "kds") return { name: "kitchen" };
-  return serviceMode === "counter" ? { name: "counter" } : { name: "hall" };
+/**
+ * Условия доступности каждого экрана. Их четыре, и они независимы:
+ * тип терминала, режим обслуживания заведения, право сотрудника и оплаченный
+ * модуль тарифа. Экран доступен, только когда выполнены все сразу.
+ *
+ * Держим таблицей, а не ветвлениями: набор входов уже вырос с двух до четырёх,
+ * и каждый следующий `switch` по типу терминала пришлось бы переписывать целиком.
+ */
+const ROUTE_SPECS: Record<RouteName, RouteSpec> = {
+  hall: {
+    terminals: ["pos", "admin"],
+    serviceModes: ["tables"],
+    permission: "order.view",
+  },
+  order: {
+    terminals: ["pos", "admin"],
+    serviceModes: ["tables"],
+    permission: "order.view",
+  },
+  // У прилавочного заведения схемы зала не существует: вместо `hall`/`order`
+  // единственный экран расчёта. Это не «урезанная касса», а другой набор
+  // экранов над тем же API (инвариант №5).
+  counter: {
+    terminals: ["pos", "admin"],
+    serviceModes: ["counter"],
+    permission: "order.view",
+  },
+  kitchen: {
+    terminals: ["kds", "admin"],
+    serviceModes: null,
+    permission: "kitchen.view",
+    feature: "kds",
+  },
+  // Станции настраивает менеджер, и делать это он может у любого терминала —
+  // в том числе стоя у кухонного монитора, где как раз и видно, что не так.
+  stations: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "station.manage",
+  },
+  // Сервисный экран доступен на терминале любого типа: чинить приходится и KDS.
+  service: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "terminal.service",
+  },
+};
+
+export interface AccessScope {
+  kind: TerminalKind;
+  serviceMode: ServiceMode;
+  /** Права сотрудника. На проде приезжают с сервера вместе со входом по PIN. */
+  permissions: ReadonlySet<Permission>;
+  /** Оплаченные модули тарифа организации. */
+  features: ReadonlySet<FeatureCode>;
+}
+
+const ALL_ROUTES = Object.keys(ROUTE_SPECS) as RouteName[];
+
+/**
+ * Какие экраны доступны. Инвариант №5: касса, KDS и админка — это разный набор
+ * экранов над одним и тем же API, а не разные сборки.
+ */
+export function routesFor(scope: AccessScope): RouteName[] {
+  return ALL_ROUTES.filter((name) => {
+    const spec = ROUTE_SPECS[name];
+    return (
+      spec.terminals.includes(scope.kind) &&
+      (spec.serviceModes === null ||
+        spec.serviceModes.includes(scope.serviceMode)) &&
+      scope.permissions.has(spec.permission) &&
+      (spec.feature === undefined || scope.features.has(spec.feature))
+    );
+  });
+}
+
+/**
+ * Порядок, в котором ищется стартовый экран. `order` сюда не входит:
+ * он требует стол и открывается только переходом из зала.
+ */
+const DEFAULT_ORDER: readonly RouteName[] = [
+  "hall",
+  "counter",
+  "kitchen",
+  // Настройка станций — последний кандидат: менеджер на KDS-терминале
+  // без оплаченного модуля кухни должен куда-то попасть.
+  "stations",
+  "service",
+];
+
+/**
+ * Первый доступный экран или `null`, если доступных нет вовсе.
+ *
+ * `null` — не ошибка вызывающего кода, а нормальный ответ: повар у кассы
+ * и официант у кухонного монитора получают именно его. Дальше это превращается
+ * в отказ входа, а не в пустой экран (см. `session.tsx`).
+ */
+export function defaultRouteFor(scope: AccessScope): Route | null {
+  const available = routesFor(scope);
+  const name = DEFAULT_ORDER.find((candidate) => available.includes(candidate));
+  return name === undefined ? null : ({ name } as Route);
 }
 
 interface NavigationValue {

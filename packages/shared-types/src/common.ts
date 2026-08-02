@@ -33,7 +33,20 @@ export type SubscriptionStatus = "active" | "past_due" | "canceled";
 
 export type TerminalKind = "pos" | "kds" | "admin";
 
-export type StaffRole = "waiter" | "cashier" | "manager" | "cook";
+/**
+ * Роли персонала плюс вендорская `support`.
+ *
+ * `support` — тех. специалист с нашей стороны, а не сотрудник арендатора:
+ * ему доступен только сервисный экран терминала. На бэкенде такой вход
+ * правильно держать вне `staff` организации (см. `docs/access.md`), чтобы
+ * он не попадал в квоту `max_staff` и не был виден менеджеру в списке персонала.
+ */
+export type StaffRole =
+  | "waiter"
+  | "cashier"
+  | "manager"
+  | "cook"
+  | "support";
 
 /**
  * Как заведение обслуживает гостей.
@@ -48,11 +61,29 @@ export type TableStatus = "free" | "occupied" | "reserved";
 
 export type OrderStatus = "open" | "sent_to_kitchen" | "paid" | "canceled";
 
-export type OrderItemStatus = "new" | "cooking" | "ready" | "served";
+/**
+ * Статус позиции заказа.
+ *
+ * `voided` — сторно: позиция уже уехала на кухню, и удалить её нельзя
+ * (append-only на `order_items`, инвариант №6) — потерянная позиция означает
+ * либо несъеденное блюдо, либо неоплаченное. Поэтому она остаётся в заказе
+ * помеченной: из суммы выпадает, с кухни уходит, в истории заказа видна.
+ */
+export type OrderItemStatus =
+  | "new"
+  | "cooking"
+  | "ready"
+  | "served"
+  | "voided";
 
 export type PaymentMethod = "cash" | "card";
 
-/** Куда позиция уезжает на приготовление — определяет KDS-экран. */
-export type PrepStation = "kitchen" | "bar";
+/*
+ * Куда позиция уезжает на приготовление, раньше было перечислением
+ * `"kitchen" | "bar"`. Стало справочником на заведение (`kitchen.ts`):
+ * у ресторана бывают холодный и горячий цеха, пицца, суши — двумя
+ * значениями это не описать, а менять перечисление под каждого клиента
+ * означает пересборку ради данных.
+ */
 
 export type MeasurementUnit = "kg" | "l" | "pcs";

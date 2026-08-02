@@ -1,6 +1,9 @@
 import type { Order, OrderItem, UUID } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
+import { useAccess } from "../app/access";
+import { useSession } from "../app/session";
 import { useOrders } from "../state/orders";
+import { useStations } from "../state/stations";
 import { useTables } from "../state/tables";
 import { findMenuItem } from "../state/menu";
 import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
@@ -17,18 +20,54 @@ const LATE_AFTER_MINUTES = 15;
  * повар видеть не должен.
  */
 export function KitchenScreen() {
-  const { kitchenTickets: tickets, setItemStatus } = useOrders();
+  const { kitchenTickets, setItemStatus } = useOrders();
   const { findTable } = useTables();
+  const { stations, findStation } = useStations();
+  const { stationId, setStationId } = useSession();
+  const { can } = useAccess();
   const now = useNow(15_000);
+  // Экран доступен по `kitchen.view`, отметки — по `kitchen.item.status`:
+  // просмотр и изменение разведены, чтобы монитор можно было повесить в зал.
+  const canChange = can("kitchen.item.status");
+
+  /*
+   * Монитор показывает только свою станцию. Без этого бар видит стейки,
+   * а горячий цех — эспрессо, и оба привыкают проматывать чужое —
+   * ровно до того дня, когда промотают своё.
+   *
+   * `null` — станция не выбрана: показываем всё, но говорим об этом.
+   */
+  const tickets =
+    stationId === null
+      ? kitchenTickets
+      : kitchenTickets.filter((ticket) => ticket.stationId === stationId);
 
   return (
     <div className="flex h-full w-full select-none flex-col overflow-hidden p-4">
-      <header className="mb-6 flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-900 p-4">
         <h1 className="text-2xl font-black tracking-wide text-emerald-400">
-          Монитор кухни
+          {findStation(stationId)?.name ?? "Монитор кухни"}
         </h1>
-        <div className="font-mono text-xl tabular-nums">
-          Активных тикетов: {tickets.length}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <StationTab
+            active={stationId === null}
+            onClick={() => setStationId(null)}
+          >
+            Все станции
+          </StationTab>
+          {stations.map((station) => (
+            <StationTab
+              key={station.id}
+              active={stationId === station.id}
+              onClick={() => setStationId(station.id)}
+            >
+              {station.name}
+            </StationTab>
+          ))}
+          <span className="ml-2 font-mono text-xl tabular-nums">
+            {tickets.length}
+          </span>
         </div>
       </header>
 
@@ -39,9 +78,14 @@ export function KitchenScreen() {
         </div>
       ) : (
         <div className="flex flex-1 items-start gap-4 overflow-x-auto pb-4">
-          {tickets.map(({ order, items }) => (
+          {tickets.map(({ order, stationId: ticketStation, items }) => (
             <Ticket
-              key={order.id}
+              key={`${order.id}:${ticketStation ?? "-"}`}
+              stationName={
+                stationId === null
+                  ? (findStation(ticketStation)?.name ?? null)
+                  : null
+              }
               order={order}
               items={items}
               tableLabel={
@@ -50,6 +94,7 @@ export function KitchenScreen() {
                   : undefined
               }
               now={now}
+              canChange={canChange}
               onItemStatus={setItemStatus}
             />
           ))}
@@ -59,15 +104,44 @@ export function KitchenScreen() {
   );
 }
 
+function StationTab({
+  active,
+  onClick,
+  children,
+}: {
+  active: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "min-h-11 rounded-lg px-4 text-sm font-bold transition active:scale-95",
+        active
+          ? "bg-emerald-600 text-slate-950"
+          : "border border-slate-700 bg-slate-800 text-slate-400 hover:bg-slate-700",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
 function Ticket({
   order,
   items,
   tableLabel,
+  stationName,
   now,
+  canChange,
   onItemStatus,
 }: {
   order: Order;
   items: OrderItem[];
+  /** Подпись станции. `null` — монитор и так показывает одну станцию. */
+  stationName: string | null;
   /**
    * Подпись стола. `undefined` — заказ на вынос, `null` — стол у заказа указан,
    * но не найден в схеме. Разные вещи: во втором случае повару нельзя
@@ -75,6 +149,7 @@ function Ticket({
    */
   tableLabel: string | undefined | null;
   now: number;
+  canChange: boolean;
   onItemStatus: (itemId: UUID, status: OrderItem["status"]) => void;
 }) {
   const isLate = minutesSince(order.createdAt, now) >= LATE_AFTER_MINUTES;
@@ -105,6 +180,12 @@ function Ticket({
         </span>
       </div>
 
+      {stationName && (
+        <div className="bg-slate-800 px-3 py-1 text-xs font-bold uppercase tracking-wider text-slate-400">
+          {stationName}
+        </div>
+      )}
+
       <div className="min-h-60 flex-1 space-y-1 p-3">
         {items.map((item) => {
           const menuItem = findMenuItem(item.menuItemId);
@@ -114,6 +195,7 @@ function Ticket({
             <button
               key={item.id}
               type="button"
+              disabled={!canChange}
               onClick={() =>
                 onItemStatus(item.id, isReady ? "cooking" : "ready")
               }
@@ -149,7 +231,7 @@ function Ticket({
 
       <button
         type="button"
-        disabled={!allReady}
+        disabled={!allReady || !canChange}
         onClick={() => {
           for (const item of items) onItemStatus(item.id, "served");
         }}

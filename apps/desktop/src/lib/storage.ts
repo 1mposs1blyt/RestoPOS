@@ -26,6 +26,19 @@ export function saveState(key: string, value: unknown): void {
   }
 }
 
+/**
+ * Стереть всё состояние терминала. Чужие ключи в localStorage не трогаем:
+ * на одном WebView может жить не только касса.
+ */
+export function clearAll(): void {
+  const keys: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (key?.startsWith(PREFIX)) keys.push(key);
+  }
+  for (const key of keys) localStorage.removeItem(key);
+}
+
 /** Временный идентификатор для сущностей, созданных до синхронизации. */
 export function newId(): string {
   return crypto.randomUUID();

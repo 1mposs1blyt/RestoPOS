@@ -13,6 +13,7 @@ const ITEM_STATUS: Record<OrderItemStatus, { label: string; className: string }>
   cooking: { label: "Готовится", className: "bg-amber-100 text-amber-900" },
   ready: { label: "Готово", className: "bg-emerald-100 text-emerald-900" },
   served: { label: "Подано", className: "bg-slate-100 text-slate-500" },
+  voided: { label: "Сторно", className: "bg-red-100 text-red-900" },
 };
 
 export interface OrderStatusBadgeProps {

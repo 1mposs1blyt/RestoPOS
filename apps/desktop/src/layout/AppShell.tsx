@@ -1,20 +1,14 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type {
-  PlanCode,
-  ServiceMode,
-  StaffRole,
-  TerminalKind,
-} from "@restopos/shared-types";
+import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
-import { useSession } from "../app/session";
-
-const ROLE_LABELS: Record<StaffRole, string> = {
-  waiter: "Официант",
-  cashier: "Кассир",
-  manager: "Менеджер",
-  cook: "Повар",
-};
+import {
+  routesFor,
+  useNavigation,
+  type AccessScope,
+  type RouteName,
+} from "../app/navigation";
+import { roleLabel, useSession } from "../app/session";
 
 const TERMINAL_LABELS: Record<TerminalKind, string> = {
   pos: "Касса",
@@ -41,7 +35,17 @@ function useWallClock(): string {
  * переключателей нет: тип терминала прописан в его регистрации,
  * а тариф приезжает с сервера вместе с подпиской организации.
  */
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  scope,
+  children,
+}: {
+  /**
+   * Набор доступных экранов для переключателя. Не передаётся, когда оболочка
+   * рисуется вне навигации — например, вокруг заглушки «нет доступных экранов».
+   */
+  scope?: AccessScope;
+  children: ReactNode;
+}) {
   const { venue, staff, terminalKind, lock } = useSession();
   const { plan } = useEntitlements();
   const clock = useWallClock();
@@ -61,6 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </span>
           <Chip>{TERMINAL_LABELS[terminalKind]}</Chip>
           <Chip>Тариф {PLAN_LABELS[plan]}</Chip>
+          {scope && <RouteSwitcher scope={scope} />}
         </div>
 
         <div className="flex items-center gap-4">
@@ -73,7 +78,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {staff.fullName}
               </div>
               <div className="text-[11px] text-slate-500">
-                {ROLE_LABELS[staff.role]}
+                {roleLabel(staff.role)}
               </div>
             </div>
           )}
@@ -92,6 +97,50 @@ export function AppShell({ children }: { children: ReactNode }) {
       </main>
 
       {import.meta.env.DEV && <DevBar />}
+    </div>
+  );
+}
+
+const ROUTE_LABELS: Partial<Record<RouteName, string>> = {
+  hall: "Зал",
+  counter: "Прилавок",
+  kitchen: "Кухня",
+  stations: "Станции",
+  service: "Сервис",
+};
+
+/**
+ * Переключатель между доступными экранами.
+ *
+ * Нужен, как только у терминала их больше одного: у менеджера это зал плюс
+ * настройка станций, у админского терминала — ещё и кухня. `order` сюда
+ * не попадает: он требует стол и открывается только из зала.
+ */
+function RouteSwitcher({ scope }: { scope: AccessScope }) {
+  const { route, reset } = useNavigation();
+  const available = routesFor(scope).filter((name) => name !== "order");
+
+  if (available.length < 2) return null;
+
+  return (
+    <div className="flex gap-1">
+      {available.map((name) => (
+        <button
+          key={name}
+          type="button"
+          // Сброс, а не переход: экраны верхнего уровня друг другу не родители,
+          // и стек «назад» между ними накапливался бы мусором.
+          onClick={() => reset({ name } as Parameters<typeof reset>[0])}
+          className={cn(
+            "min-h-11 rounded-lg px-3 text-xs font-bold transition active:scale-95",
+            route.name === name || (route.name === "order" && name === "hall")
+              ? "bg-orange-500 text-white"
+              : "bg-slate-800 text-slate-400 hover:bg-slate-700",
+          )}
+        >
+          {ROUTE_LABELS[name] ?? name}
+        </button>
+      ))}
     </div>
   );
 }

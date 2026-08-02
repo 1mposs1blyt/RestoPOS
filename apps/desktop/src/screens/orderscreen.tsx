@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import type { OrderItem, PaymentMethod, UUID } from "@restopos/shared-types";
+import type { OrderItem, UUID } from "@restopos/shared-types";
 import { OrderItemStatusBadge, OrderStatusBadge, cn } from "@restopos/ui-kit";
+import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
+import { useSession } from "../app/session";
 import { useOrders } from "../state/orders";
+import { usePrinting } from "../state/printing";
 import { useTables } from "../state/tables";
 import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
 import { formatMoney, multiplyMoney } from "../lib/money";
+import { CashPaymentDialog } from "../components/cashpaymentdialog";
 
 /**
  * Экран заказа: чек слева, меню справа.
@@ -13,11 +17,18 @@ import { formatMoney, multiplyMoney } from "../lib/money";
  * Позиция редактируется, пока не ушла на кухню (`status === "new"`). После
  * отправки её нельзя удалить из чека — это инвариант №6, append-only
  * на уровне `order_items`: потерянная позиция означает несъеденное блюдо
- * либо неоплаченное.
+ * либо неоплаченное. Отменить её можно только сторно, и это уже действие
+ * с подтверждением.
+ *
+ * Разграничение здесь двух видов. Право, которого нет и не может быть,
+ * просто гасит кнопку. Право, которое можно подтвердить (`order.item.void`,
+ * `order.foreign`), ведёт в диалог подтверждения — см. `app/access.tsx`.
  */
 export function OrderScreen({ tableId }: { tableId: UUID }) {
   const { back } = useNavigation();
   const { findTable } = useTables();
+  const { staff } = useSession();
+  const { can, authorize } = useAccess();
   const {
     orderOfTable,
     openOrder,
@@ -27,9 +38,13 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
     addItem,
     setQuantity,
     removeItem,
-    sendToKitchen,
+    voidItem,
+    setItemStatus,
     payOrder,
   } = useOrders();
+  // Отправка и печать марок — одна операция: разъехавшись, они дают повару
+  // на бумаге не то, что у него на экране.
+  const { fireOrder } = usePrinting();
 
   const table = findTable(tableId);
   const order = orderOfTable(tableId);
@@ -41,6 +56,16 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
   const [activeCategoryId, setActiveCategoryId] = useState(
     () => MENU_CATEGORIES[0].id,
   );
+  const [isCashOpen, setCashOpen] = useState(false);
+  /** Доступ к чужому заказу, подтверждённый на этот заход. */
+  const [isForeignApproved, setForeignApproved] = useState(false);
+
+  // Подтверждение действует на один заказ, а не на терминал: перешли к другому
+  // столу — спрашиваем заново.
+  useEffect(() => {
+    setForeignApproved(false);
+    setCashOpen(false);
+  }, [tableId]);
 
   const categoryItems = useMemo(
     () => menuItemsOfCategory(activeCategoryId),
@@ -52,11 +77,57 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
 
   const items = itemsOfOrder(order.id);
   const total = orderTotal(order.id);
-  const canSend = hasPendingItems(order.id);
+  const canSend = hasPendingItems(order.id) && can("order.send");
+  const canEditItems = can("order.item.add");
+  const canPay = can("payment.accept");
+  const canServe = can("order.item.serve");
 
-  const handlePay = (method: PaymentMethod) => {
-    payOrder(order.id, method);
+  const subject = `Заказ № ${order.number}, стол ${table?.label ?? "—"}`;
+
+  /*
+   * Чужой заказ. Официант отвечает за свои столы: `orders.waiter_id` — это
+   * чья выручка и чьи чаевые, и подойти к чужому чеку он может только
+   * с ведома того, у кого право есть (у кассира и менеджера оно своё).
+   */
+  const isForeign = Boolean(staff && order.waiterId !== staff.id);
+  const needsForeignApproval =
+    isForeign && !can("order.foreign") && !isForeignApproved;
+
+  if (needsForeignApproval) {
+    return (
+      <ForeignOrderGuard
+        subject={subject}
+        onRequest={() => {
+          authorize("order.foreign", subject).then(
+            () => setForeignApproved(true),
+            // Отказались подтверждать — возвращаем в зал, а не оставляем
+            // стоять перед закрытой дверью.
+            () => back(),
+          );
+        }}
+        onBack={back}
+      />
+    );
+  }
+
+  const handleCard = () => {
+    payOrder(order.id, "card");
     back();
+  };
+
+  const handleCash = () => {
+    payOrder(order.id, "cash");
+    setCashOpen(false);
+    back();
+  };
+
+  const handleVoid = (itemId: UUID) => {
+    // Промис отклоняется, если подтверждение отменили, — это штатный путь,
+    // и делать в этом случае нечего.
+    authorize("order.item.void", subject).then(
+      () => voidItem(itemId),
+      () => undefined,
+    );
   };
 
   return (
@@ -91,8 +162,12 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
               <CheckLine
                 key={item.id}
                 item={item}
+                canEdit={canEditItems}
+                canServe={canServe}
                 onQuantity={setQuantity}
                 onRemove={removeItem}
+                onVoid={handleVoid}
+                onServe={(itemId) => setItemStatus(itemId, "served")}
               />
             ))
           )}
@@ -109,7 +184,7 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
           <button
             type="button"
             disabled={!canSend}
-            onClick={() => sendToKitchen(order.id)}
+            onClick={() => fireOrder(order.id)}
             className="min-h-14 w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition hover:from-emerald-500 hover:to-teal-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             {canSend ? "Отправить на кухню" : "Всё отправлено на кухню"}
@@ -118,21 +193,27 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
-              disabled={items.length === 0}
-              onClick={() => handlePay("cash")}
+              disabled={items.length === 0 || !canPay}
+              onClick={() => setCashOpen(true)}
               className="min-h-14 rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition hover:bg-slate-700 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
             >
               Наличные
             </button>
             <button
               type="button"
-              disabled={items.length === 0}
-              onClick={() => handlePay("card")}
+              disabled={items.length === 0 || !canPay}
+              onClick={handleCard}
               className="min-h-14 rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition hover:bg-slate-700 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
             >
               Картой
             </button>
           </div>
+
+          {!canPay && (
+            <p className="text-center text-xs text-slate-600">
+              Оплату принимает кассир
+            </p>
+          )}
         </div>
       </div>
 
@@ -167,7 +248,7 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
             <button
               key={menuItem.id}
               type="button"
-              disabled={menuItem.isStopListed}
+              disabled={menuItem.isStopListed || !canEditItems}
               onClick={() => addItem(order.id, menuItem.id)}
               className={cn(
                 "group flex h-28 flex-col items-start justify-between rounded-2xl border p-4 text-left shadow-sm transition",
@@ -192,34 +273,120 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
           ))}
         </div>
       </div>
+
+      {isCashOpen && (
+        <CashPaymentDialog
+          total={total}
+          onConfirm={handleCash}
+          onCancel={() => setCashOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Заслонка перед чужим заказом.
+ *
+ * Показываем сам факт и предлагаем подтвердить, а не прячем стол из зала:
+ * официанту нужно видеть, что стол занят коллегой, иначе он будет считать
+ * его свободным и сажать туда гостей.
+ */
+function ForeignOrderGuard({
+  subject,
+  onRequest,
+  onBack,
+}: {
+  subject: string;
+  onRequest: () => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex h-full w-full items-center justify-center p-8">
+      <div className="max-w-sm space-y-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-8 text-center">
+        <span className="text-4xl">🔑</span>
+        <h2 className="text-lg font-bold text-slate-200">
+          Заказ другого сотрудника
+        </h2>
+        <p className="text-sm text-slate-500">
+          {subject}. Чтобы открыть его, нужно подтверждение кассира или
+          менеджера.
+        </p>
+        <button
+          type="button"
+          onClick={onRequest}
+          className="min-h-14 w-full rounded-xl bg-gradient-to-r from-amber-600 to-orange-600 text-sm font-bold text-white transition hover:from-amber-500 hover:to-orange-500 active:scale-95"
+        >
+          Запросить подтверждение
+        </button>
+        <button
+          type="button"
+          onClick={onBack}
+          className="min-h-14 w-full rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition hover:bg-slate-700 active:scale-95"
+        >
+          ← В зал
+        </button>
+      </div>
     </div>
   );
 }
 
 function CheckLine({
   item,
+  canEdit,
+  canServe,
   onQuantity,
   onRemove,
+  onVoid,
+  onServe,
 }: {
   item: OrderItem;
+  canEdit: boolean;
+  canServe: boolean;
   onQuantity: (itemId: UUID, quantity: number) => void;
   onRemove: (itemId: UUID) => void;
+  onVoid: (itemId: UUID) => void;
+  onServe: (itemId: UUID) => void;
 }) {
   const menuItem = findMenuItem(item.menuItemId);
-  const isEditable = item.status === "new";
+  const isEditable = item.status === "new" && canEdit;
+  const isVoided = item.status === "voided";
+  // Сторнировать можно то, что уже уехало на кухню и ещё не отдано гостю.
+  const canVoid = item.status === "cooking" || item.status === "ready";
+  /*
+   * «Отдано» отмечает официант, а не кухня. Без этой кнопки станция без
+   * экрана (тариф без KDS, только принтер) не закрывается ничем: позиции
+   * приезжают сразу готовыми, и двигать их дальше некому.
+   */
+  const showServe = item.status === "ready" && canServe;
 
   return (
-    <div className="rounded-xl border border-slate-800/60 bg-slate-900 p-3">
+    <div
+      className={cn(
+        "rounded-xl border border-slate-800/60 bg-slate-900 p-3",
+        isVoided && "opacity-50",
+      )}
+    >
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">
+          <p
+            className={cn(
+              "truncate text-sm font-medium",
+              isVoided && "line-through",
+            )}
+          >
             {menuItem?.name ?? "Позиция удалена из меню"}
           </p>
           <p className="text-xs tabular-nums text-slate-500">
             {menuItem ? formatMoney(menuItem.price) : "—"}
           </p>
         </div>
-        <span className="text-sm font-bold tabular-nums">
+        <span
+          className={cn(
+            "text-sm font-bold tabular-nums",
+            isVoided && "line-through",
+          )}
+        >
           {menuItem ? formatMoney(multiplyMoney(menuItem.price, item.quantity)) : "—"}
         </span>
       </div>
@@ -252,10 +419,30 @@ function CheckLine({
           </div>
         ) : (
           // Отправленную позицию из чека не убрать — только сторнировать,
-          // и это отдельное действие менеджера.
-          <span className="text-xs font-bold tabular-nums text-slate-400">
-            × {item.quantity}
-          </span>
+          // и это действие с подтверждением.
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold tabular-nums text-slate-400">
+              × {item.quantity}
+            </span>
+            {showServe && (
+              <button
+                type="button"
+                onClick={() => onServe(item.id)}
+                className="inline-flex min-h-11 items-center rounded-lg bg-emerald-600/20 px-3 text-sm font-bold text-emerald-300 transition hover:bg-emerald-600/30 active:scale-95"
+              >
+                Отдано
+              </button>
+            )}
+            {canVoid && (
+              <button
+                type="button"
+                onClick={() => onVoid(item.id)}
+                className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400"
+              >
+                Сторно
+              </button>
+            )}
+          </div>
         )}
 
         {!isEditable && <OrderItemStatusBadge status={item.status} />}

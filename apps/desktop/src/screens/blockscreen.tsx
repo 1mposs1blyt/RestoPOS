@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { AuthForm } from "@restopos/ui-kit";
 import { useSession } from "../app/session";
 
@@ -8,13 +9,31 @@ import { useSession } from "../app/session";
  * Вся логика ввода — в `PinPad` из ui-kit, здесь только брендирование
  * и связь с сессией. `signIn` бросает исключение при неверном пине,
  * `PinPad` по нему подсвечивает и очищает поле.
+ *
+ * Причину отказа показываем текстом: кроме неверного пина она бывает содержательной —
+ * повар у кассы получает «на этом терминале нет доступных экранов», и без
+ * объяснения он решит, что касса сломалась, и пойдёт искать менеджера.
  */
 export function BlockScreen() {
   const { signIn } = useSession();
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = async (pin: string) => {
+    setError(null);
+    try {
+      await signIn(pin);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Не удалось войти");
+      // Пробрасываем дальше: по отклонённому промису `PinPad` подсветит
+      // и очистит поле.
+      throw reason;
+    }
+  };
 
   return (
     <AuthForm
-      onSubmit={signIn}
+      onSubmit={handleSubmit}
+      error={error}
       backgroundUrl="/bg-logo.webp"
       productName="RestoPOS"
       tagline="Терминал обслуживания ресторанов"
@@ -39,6 +58,7 @@ const DEMO_PINS = [
   ["2222", "Кассир"],
   ["3333", "Менеджер"],
   ["4444", "Повар"],
+  ["9999", "Тех. поддержка"],
 ];
 
 /** Демо-подсказка: пока авторизации нет, пины зашиты в `session.tsx`. */

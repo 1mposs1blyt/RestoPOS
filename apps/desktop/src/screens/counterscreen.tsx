@@ -7,10 +7,13 @@ import type {
   UUID,
 } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
+import { useAccess } from "../app/access";
 import { useOrders } from "../state/orders";
+import { usePrinting } from "../state/printing";
 import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
 import { formatMoney, multiplyMoney } from "../lib/money";
 import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
+import { CashPaymentDialog } from "../components/cashpaymentdialog";
 
 /**
  * Расчёт на прилавке — режим `counter` (шаурмечная, кофейня навынос).
@@ -20,6 +23,7 @@ import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
  * на прилавке платят вперёд, и разделять эти два действия незачем.
  */
 export function CounterScreen() {
+  const { can, authorize } = useAccess();
   const {
     counterOrder,
     openOrder,
@@ -28,14 +32,15 @@ export function CounterScreen() {
     addItem,
     setQuantity,
     removeItem,
-    sendToKitchen,
     payOrder,
     cancelOrder,
   } = useOrders();
+  const { fireOrder } = usePrinting();
 
   const [activeCategoryId, setActiveCategoryId] = useState(
     () => MENU_CATEGORIES[0].id,
   );
+  const [isCashOpen, setCashOpen] = useState(false);
   /** Только что рассчитанный заказ: номер называют гостю, способ — для сверки. */
   const [served, setServed] = useState<{
     number: number;
@@ -57,12 +62,25 @@ export function CounterScreen() {
   const total = orderTotal(counterOrder.id);
 
   const handlePay = (method: PaymentMethod) => {
-    // Порядок важен: сначала на кухню, потом оплата. `sendToKitchen`
-    // переводит позиции в `cooking`, и тикет остаётся на кухонном экране
+    // Порядок важен: сначала на кухню, потом оплата. `fireOrder`
+    // переводит позиции в работу, и тикет остаётся на кухонном экране
     // даже после того, как заказ стал `paid`.
-    sendToKitchen(counterOrder.id);
+    fireOrder(counterOrder.id);
     payOrder(counterOrder.id, method);
     setServed({ number: counterOrder.number, method });
+    setCashOpen(false);
+  };
+
+  /*
+   * «Сброс» отменяет набранный заказ целиком — это `order.cancel`, а не
+   * очистка формы: у заказа уже есть номер в смене, и он не переиспользуется.
+   * У кассира право своё, официант за прилавком спросит подтверждение.
+   */
+  const handleReset = () => {
+    authorize("order.cancel", `Заказ № ${counterOrder.number}`).then(
+      () => cancelOrder(counterOrder.id),
+      () => undefined,
+    );
   };
 
   return (
@@ -75,10 +93,13 @@ export function CounterScreen() {
         items={items}
         total={total}
         served={served}
+        canPay={can("payment.accept")}
+        canEdit={can("order.item.add")}
         onQuantity={setQuantity}
         onRemove={removeItem}
-        onPay={handlePay}
-        onReset={() => cancelOrder(counterOrder.id)}
+        onCash={() => setCashOpen(true)}
+        onCard={() => handlePay("card")}
+        onReset={handleReset}
         onCloseOverlay={() => setServed(null)}
       />
 
@@ -106,7 +127,7 @@ export function CounterScreen() {
             <button
               key={menuItem.id}
               type="button"
-              disabled={menuItem.isStopListed}
+              disabled={menuItem.isStopListed || !can("order.item.add")}
               onClick={() => addItem(counterOrder.id, menuItem.id)}
               className={cn(
                 "group flex h-28 flex-col items-start justify-between rounded-2xl border p-4 text-left shadow-sm transition",
@@ -133,6 +154,14 @@ export function CounterScreen() {
       </div>
 
       <OrderQueue />
+
+      {isCashOpen && (
+        <CashPaymentDialog
+          total={total}
+          onConfirm={() => handlePay("cash")}
+          onCancel={() => setCashOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -147,7 +176,10 @@ export function CounterScreen() {
  */
 function OrderQueue() {
   const { kitchenTickets, setItemStatus, paymentOfOrder } = useOrders();
+  const { can } = useAccess();
   const now = useNow(15_000);
+  // Выдача гостю, а не кухонный статус: на прилавке заказ отдаёт кассир.
+  const canIssue = can("order.item.serve");
 
   return (
     <div className="flex w-64 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950 shadow-2xl xl:w-72">
@@ -175,6 +207,7 @@ function OrderQueue() {
               items={items}
               method={paymentOfOrder(order.id)?.method}
               now={now}
+              canIssue={canIssue}
               onIssued={() => {
                 for (const item of items) setItemStatus(item.id, "served");
               }}
@@ -226,6 +259,7 @@ function QueueCard({
   items,
   method,
   now,
+  canIssue,
   onIssued,
 }: {
   number: number;
@@ -234,6 +268,7 @@ function QueueCard({
   /** `undefined` — заказ ещё не рассчитан (заказы из зала). */
   method: PaymentMethod | undefined;
   now: number;
+  canIssue: boolean;
   onIssued: () => void;
 }) {
   const isLate = minutesSince(createdAt, now) >= LATE_AFTER_MINUTES;
@@ -277,8 +312,9 @@ function QueueCard({
 
       <button
         type="button"
+        disabled={!canIssue}
         onClick={onIssued}
-        className="min-h-11 w-full bg-emerald-600 text-sm font-black uppercase tracking-wider text-slate-950 transition hover:bg-emerald-500 active:scale-95"
+        className="min-h-11 w-full bg-emerald-600 text-sm font-black uppercase tracking-wider text-slate-950 transition hover:bg-emerald-500 active:scale-95 disabled:pointer-events-none disabled:bg-slate-800 disabled:text-slate-600"
       >
         Выдал
       </button>
@@ -291,9 +327,12 @@ function CounterCheck({
   items,
   total,
   served,
+  canPay,
+  canEdit,
   onQuantity,
   onRemove,
-  onPay,
+  onCash,
+  onCard,
   onReset,
   onCloseOverlay,
 }: {
@@ -301,9 +340,12 @@ function CounterCheck({
   items: OrderItem[];
   total: Money;
   served: { number: number; method: PaymentMethod } | null;
+  canPay: boolean;
+  canEdit: boolean;
   onQuantity: (itemId: UUID, quantity: number) => void;
   onRemove: (itemId: UUID) => void;
-  onPay: (method: PaymentMethod) => void;
+  onCash: () => void;
+  onCard: () => void;
   onReset: () => void;
   onCloseOverlay: () => void;
 }) {
@@ -338,6 +380,7 @@ function CounterCheck({
             <CounterLine
               key={item.id}
               item={item}
+              canEdit={canEdit}
               onQuantity={onQuantity}
               onRemove={onRemove}
             />
@@ -356,16 +399,16 @@ function CounterCheck({
         <div className="grid grid-cols-2 gap-2">
           <button
             type="button"
-            disabled={items.length === 0}
-            onClick={() => onPay("cash")}
+            disabled={items.length === 0 || !canPay}
+            onClick={onCash}
             className="min-h-16 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-base font-bold text-white shadow-lg shadow-emerald-900/20 transition hover:from-emerald-500 hover:to-teal-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             Наличные
           </button>
           <button
             type="button"
-            disabled={items.length === 0}
-            onClick={() => onPay("card")}
+            disabled={items.length === 0 || !canPay}
+            onClick={onCard}
             className="min-h-16 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 text-base font-bold text-white shadow-lg shadow-sky-900/20 transition hover:from-sky-500 hover:to-indigo-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
           >
             Картой
@@ -421,10 +464,12 @@ function PaidOverlay({
 
 function CounterLine({
   item,
+  canEdit,
   onQuantity,
   onRemove,
 }: {
   item: OrderItem;
+  canEdit: boolean;
   onQuantity: (itemId: UUID, quantity: number) => void;
   onRemove: (itemId: UUID) => void;
 }) {
@@ -446,9 +491,10 @@ function CounterLine({
       <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
+          disabled={!canEdit}
           onClick={() => onQuantity(item.id, item.quantity - 1)}
           aria-label="Уменьшить количество"
-          className="h-11 w-11 rounded-lg bg-slate-800 text-lg font-bold text-slate-300 transition hover:bg-slate-700 active:scale-90"
+          className="h-11 w-11 rounded-lg bg-slate-800 text-lg font-bold text-slate-300 transition hover:bg-slate-700 active:scale-90 disabled:pointer-events-none disabled:opacity-40"
         >
           −
         </button>
@@ -457,16 +503,18 @@ function CounterLine({
         </span>
         <button
           type="button"
+          disabled={!canEdit}
           onClick={() => onQuantity(item.id, item.quantity + 1)}
           aria-label="Увеличить количество"
-          className="h-11 w-11 rounded-lg bg-slate-800 text-lg font-bold text-slate-300 transition hover:bg-slate-700 active:scale-90"
+          className="h-11 w-11 rounded-lg bg-slate-800 text-lg font-bold text-slate-300 transition hover:bg-slate-700 active:scale-90 disabled:pointer-events-none disabled:opacity-40"
         >
           +
         </button>
         <button
           type="button"
+          disabled={!canEdit}
           onClick={() => onRemove(item.id)}
-          className="ml-1 inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400"
+          className="ml-1 inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400 disabled:pointer-events-none disabled:opacity-40"
         >
           Удалить
         </button>

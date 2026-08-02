@@ -1,4 +1,4 @@
-import type { Money, PrepStation, UUID } from "./common";
+import type { Money, UUID } from "./common";
 
 export interface MenuCategory {
   id: UUID;
@@ -14,7 +14,11 @@ export interface MenuItem {
   price: Money;
   /** Стоп-лист: позиция видна, но недоступна к заказу. */
   isStopListed: boolean;
-  prepStation: PrepStation | null;
+  /**
+   * Станция приготовления (`PrepStation`). `null` — позиция никуда не уезжает:
+   * готовое к выдаче (бутылка воды, шоколадка) не должно занимать кухню.
+   */
+  prepStationId: UUID | null;
 }
 
 export interface Modifier {

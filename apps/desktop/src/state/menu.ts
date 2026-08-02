@@ -26,7 +26,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Борщ с говядиной",
     price: "420.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-pho",
@@ -34,7 +34,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Фо Бо",
     price: "480.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-ribeye",
@@ -42,7 +42,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Стейк Рибай",
     price: "1500.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-carbonara",
@@ -50,7 +50,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Паста карбонара",
     price: "620.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-margherita",
@@ -58,7 +58,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Пицца Маргарита",
     price: "690.00",
     isStopListed: true,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-caesar",
@@ -66,7 +66,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Цезарь с курицей",
     price: "540.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-greek",
@@ -74,7 +74,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Греческий",
     price: "390.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-mors",
@@ -82,7 +82,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Морс клюквенный",
     price: "150.00",
     isStopListed: false,
-    prepStation: "bar",
+    prepStationId: "station-bar",
   },
   {
     id: "item-espresso",
@@ -90,7 +90,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Эспрессо",
     price: "180.00",
     isStopListed: false,
-    prepStation: "bar",
+    prepStationId: "station-bar",
   },
   {
     id: "item-lemonade",
@@ -98,7 +98,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Лимонад домашний",
     price: "260.00",
     isStopListed: false,
-    prepStation: "bar",
+    prepStationId: "station-bar",
   },
   {
     id: "item-medovik",
@@ -106,7 +106,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Медовик",
     price: "320.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
   {
     id: "item-cheesecake",
@@ -114,7 +114,7 @@ export const MENU_ITEMS: MenuItem[] = [
     name: "Чизкейк Нью-Йорк",
     price: "380.00",
     isStopListed: false,
-    prepStation: "kitchen",
+    prepStationId: "station-kitchen",
   },
 ];
 

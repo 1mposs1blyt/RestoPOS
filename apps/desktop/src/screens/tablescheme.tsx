@@ -1,8 +1,8 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { UUID } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
+import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
-import { useSession } from "../app/session";
 import { useOrders } from "../state/orders";
 import {
   findDuplicateLabels,
@@ -44,7 +44,7 @@ interface DragState {
  */
 export function TableScheme() {
   const { navigate } = useNavigation();
-  const { hasRole } = useSession();
+  const { can } = useAccess();
   const { tables, addTable, moveTable, removeTable, renameTable } = useTables();
   const { tableStatus, orderOfTable, orderTotal } = useOrders();
   const now = useNow();
@@ -53,7 +53,9 @@ export function TableScheme() {
   // Молча перенумеровывать чужую расстановку нельзя — показываем их менеджеру.
   const duplicates = findDuplicateLabels(tables);
 
-  const canEditLayout = hasRole("manager");
+  // Право, а не роль: «расстановку меняет менеджер» — сегодняшнее содержимое
+  // матрицы, а не свойство экрана.
+  const canEditLayout = can("hall.layout.edit");
   const [isDesignMode, setDesignMode] = useState(false);
   const [drag, setDrag] = useState<DragState | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);

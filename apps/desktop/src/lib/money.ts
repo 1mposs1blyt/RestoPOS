@@ -31,6 +31,18 @@ export function sumMoney(values: Money[]): Money {
   return fromMinor(values.reduce((acc, value) => acc + toMinor(value), 0));
 }
 
+/** Разность. Результат может быть отрицательным — сдача считается через неё. */
+export function subtractMoney(from: Money, amount: Money): Money {
+  return fromMinor(toMinor(from) - toMinor(amount));
+}
+
+/** Знак разности: <0, 0, >0 — как у компараторов сортировки. */
+export function compareMoney(a: Money, b: Money): number {
+  return toMinor(a) - toMinor(b);
+}
+
+export const ZERO_MONEY: Money = "0.00";
+
 const RUB = new Intl.NumberFormat("ru-RU", {
   minimumFractionDigits: 2,
   maximumFractionDigits: 2,
