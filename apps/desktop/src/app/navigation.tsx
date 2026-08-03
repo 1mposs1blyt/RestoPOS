@@ -179,7 +179,9 @@ export function NavigationProvider({
 
   const value = useMemo<NavigationValue>(
     () => ({
-      route: stack[stack.length - 1]!,
+      // Стек не бывает пустым по построению: инициализируется одним маршрутом,
+      // а `back` не снимает последний.
+      route: stack[stack.length - 1],
       canGoBack: stack.length > 1,
       navigate,
       back,

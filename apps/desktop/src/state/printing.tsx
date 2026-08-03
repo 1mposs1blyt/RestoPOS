@@ -186,8 +186,7 @@ export function PrintingProvider({ children }: { children: ReactNode }) {
   const ticketLines = useCallback(
     (job: PrintJob, order: Order | undefined): TicketLine[] => {
       const station = findStation(job.stationId);
-      const table =
-        order && order.tableId ? findTable(order.tableId) : undefined;
+      const table = order?.tableId ? findTable(order.tableId) : undefined;
       const items = job.itemIds
         .map((id) => ordersState.items[id])
         .filter((item): item is OrderItem => item !== undefined);

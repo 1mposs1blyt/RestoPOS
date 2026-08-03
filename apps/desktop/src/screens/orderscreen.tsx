@@ -62,6 +62,7 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
 
   // Подтверждение действует на один заказ, а не на терминал: перешли к другому
   // столу — спрашиваем заново.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: tableId не читается в теле, он триггер сброса — правило такой приём не различает
   useEffect(() => {
     setForeignApproved(false);
     setCashOpen(false);

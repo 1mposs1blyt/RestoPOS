@@ -21,6 +21,7 @@ export function PinDots({ filled, length, invalid, className }: PinDotsProps) {
         const isFilled = index < filled;
         return (
           <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: точки различаются только позицией, другого ключа у них нет и список не переупорядочивается
             key={index}
             className={cn(
               "h-5 w-5 rounded-full border-2 transition-all duration-300 ease-out",

@@ -10,6 +10,7 @@ import {
 import type { TableLayout, TableShape, UUID } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
 import { nextTableLabel } from "./table-numbering";
+import { SHAPE_SIZES, clamp01, normalizeTables } from "./tables-migration";
 
 export { findDuplicateLabels } from "./table-numbering";
 
@@ -24,54 +25,13 @@ const STORAGE_KEY = "hall.layout";
 /** Ключ до появления сторов — читаем один раз, чтобы не потерять расстановку. */
 const LEGACY_KEY = "iiko_table_scheme";
 
-const SHAPE_SIZES: Record<TableShape, { width: number; height: number }> = {
-  rectangle: { width: 140, height: 90 },
-  square: { width: 90, height: 90 },
-  circle: { width: 100, height: 100 },
-};
-
-/**
- * Размеры прежней логической поверхности. Нужны только для пересчёта старых
- * расстановок в доли — новые координаты в ней уже не выражаются.
- */
-const LEGACY_SURFACE = { width: 1600, height: 900 };
-
-interface LegacyTable {
-  id: string;
-  venueId?: UUID;
-  /** Ключ `number` — самая первая версия, `label` — вторая. */
-  number?: string;
-  label?: string;
-  type?: TableShape;
-  shape?: TableShape;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
-
-const clamp01 = (value: number) => Math.min(Math.max(value, 0), 1);
-
-/** Пересчёт стола из абсолютных координат в доли холста. */
-function toNormalized(table: LegacyTable, venueId: UUID): TableLayout {
-  return {
-    id: table.id,
-    venueId: table.venueId ?? venueId,
-    label: table.label ?? table.number ?? "?",
-    shape: table.shape ?? table.type ?? "square",
-    cx: clamp01((table.x + table.width / 2) / LEGACY_SURFACE.width),
-    cy: clamp01((table.y + table.height / 2) / LEGACY_SURFACE.height),
-    width: table.width,
-    height: table.height,
-  };
-}
-
 /**
  * Чтение расстановки с приведением к текущему формату.
  *
  * В localStorage могут лежать данные трёх поколений: самое старое под ключом
  * `iiko_table_scheme`, затем абсолютные `x`/`y`, и текущее — доли `cx`/`cy`.
- * Терять чужую расстановку при обновлении версии нельзя, поэтому конвертируем.
+ * Терять чужую расстановку при обновлении версии нельзя, поэтому конвертируем
+ * (сам пересчёт — в `tables-migration.ts`, он покрыт тестами).
  */
 function loadTables(venueId: UUID): TableLayout[] {
   try {
@@ -84,12 +44,7 @@ function loadTables(venueId: UUID): TableLayout[] {
     if (!raw) return [];
     if (stored === null) localStorage.removeItem(LEGACY_KEY);
 
-    return raw.map((entry) => {
-      const table = entry as LegacyTable & Partial<TableLayout>;
-      return typeof table.cx === "number"
-        ? (table as TableLayout)
-        : toNormalized(table, venueId);
-    });
+    return normalizeTables(raw, venueId);
   } catch (error) {
     console.error("Не удалось прочитать схему зала:", error);
     return [];
