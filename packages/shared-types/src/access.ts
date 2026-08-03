@@ -1,4 +1,10 @@
 import type { StaffRole } from "./common";
+import {
+  CONTRACT_OVERRIDABLE,
+  CONTRACT_ROLE_PERMISSIONS,
+  type ContractPermission,
+  type ContractRole,
+} from "./contract.generated";
 
 /**
  * Права доступа: что сотруднику можно делать.
@@ -7,50 +13,24 @@ import type { StaffRole } from "./common";
  * её в коде (`if (role === 'manager')`) нельзя: первое же «нашим кассирам можно
  * сторно» разъедет условия по всему приложению вместо одной правки матрицы.
  *
- * Матрица общая для фронта и бэкенда намеренно — коды прав обязаны совпадать
- * с теми, что проверяет `requirePermission` (см. `docs/access.md`). Источником
- * истины при этом остаётся сервер: клиент получает готовый список в ответе
- * на вход по PIN, а эта таблица — то, из чего сервер его строит.
+ * **Источник истины — `contracts/contract.json`**, а не этот файл. Бэкенд пишется
+ * на C#/C++ и импортировать TypeScript не может, поэтому матрица лежит в нейтральном
+ * JSON, который читают обе стороны. Здесь только производные типы и хелперы.
+ * После правки контракта: `pnpm contracts:build`.
  */
-export type Permission =
-  // Заказы
-  | "order.view"
-  | "order.create"
-  | "order.item.add"
-  | "order.send"
-  /**
-   * Отдать позицию гостю. Отдельно от `kitchen.item.status`: «готово» отмечает
-   * кухня, «отдано» — тот, кто донёс до стола или выдал на прилавке. Без этого
-   * права у станции без экрана позиции некому закрыть, и очередь растёт вечно.
-   */
-  | "order.item.serve"
-  | "order.item.void"
-  | "order.discount"
-  | "order.cancel"
-  | "order.foreign"
-  // Деньги
-  | "payment.accept"
-  | "payment.refund"
-  | "cash.drawer"
-  | "shift.open"
-  | "shift.close"
-  | "report.x"
-  | "report.z"
-  // Кухня
-  | "kitchen.view"
-  | "kitchen.item.status"
-  // Кухонная печать
-  | "print.reprint"
-  | "station.manage"
-  // Настройка заведения
-  | "hall.layout.edit"
-  | "menu.stoplist"
-  | "menu.edit"
-  | "staff.manage"
-  | "warehouse.view"
-  | "warehouse.edit"
-  // Терминал
-  | "terminal.service";
+export type Permission = ContractPermission;
+
+/**
+ * Роли контракта обязаны совпадать с `StaffRole` домена. Если списки разъедутся,
+ * этот тип перестанет собираться — а иначе расхождение всплыло бы отказом входа
+ * у живого сотрудника.
+ */
+type Equals<A, B> =
+  (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+    ? true
+    : false;
+type Assert<T extends true> = T;
+export type RolesMatchContract = Assert<Equals<StaffRole, ContractRole>>;
 
 /**
  * Права, которые можно получить разово — подтверждением сотрудника, у которого
@@ -59,13 +39,8 @@ export type Permission =
  *
  * Право вне этого списка не подтверждается никем: его либо есть, либо нет.
  */
-export const OVERRIDABLE_PERMISSIONS: readonly Permission[] = [
-  "order.item.void",
-  "order.discount",
-  "order.cancel",
-  "order.foreign",
-  "payment.refund",
-];
+export const OVERRIDABLE_PERMISSIONS: readonly Permission[] =
+  CONTRACT_OVERRIDABLE;
 
 export function isOverridable(permission: Permission): boolean {
   return OVERRIDABLE_PERMISSIONS.includes(permission);
@@ -77,87 +52,13 @@ export function isOverridable(permission: Permission): boolean {
  * Официант и кассир оба забивают заказ и оба принимают оплату, включая наличные
  * со сдачей. Различие в другом: денежный ящик (смена, изъятия, возврат) — зона
  * кассира, а официант работает со своими заказами, чужой открывает только
- * с подтверждения. Слить их в одну роль означало бы либо раздать официантам
- * гашение смены, либо отобрать у кассира чужие столы.
+ * с подтверждения.
  *
  * `support` — вендорский инженер, а не сотрудник заведения: ровно одно право
- * на сервисный экран. Ни денег, ни заказов — чужие люди с правом сторно в чужой
- * кассе это не техподдержка.
+ * на сервисный экран. Ни денег, ни заказов.
  */
-export const ROLE_PERMISSIONS: Record<StaffRole, readonly Permission[]> = {
-  waiter: [
-    "order.view",
-    "order.create",
-    "order.item.add",
-    "order.send",
-    "order.item.serve",
-    "payment.accept",
-  ],
-
-  cashier: [
-    "order.view",
-    "order.create",
-    "order.item.add",
-    "order.send",
-    "order.item.serve",
-    "order.cancel",
-    "order.foreign",
-    "payment.accept",
-    "payment.refund",
-    "cash.drawer",
-    "shift.open",
-    "shift.close",
-    "report.x",
-    /*
-     * Кухня прилавка — это очередь выдачи у самой кассы: там кассир сам
-     * и готовит, и отдаёт, и кончившийся продукт замечает первым. Доступа
-     * к кухонному экрану это ему не даёт — `kitchen.view` остаётся за поваром,
-     * и в заведении с залом кассир по-прежнему никакой кухни не видит.
-     */
-    "kitchen.item.status",
-    // Лента зажевала марку — переть за менеджером через весь зал незачем.
-    "print.reprint",
-    "menu.stoplist",
-  ],
-
-  manager: [
-    "order.view",
-    "order.create",
-    "order.item.add",
-    "order.send",
-    "order.item.serve",
-    "order.item.void",
-    "order.discount",
-    "order.cancel",
-    "order.foreign",
-    "payment.accept",
-    "payment.refund",
-    "cash.drawer",
-    "shift.open",
-    "shift.close",
-    "report.x",
-    "report.z",
-    "kitchen.view",
-    "kitchen.item.status",
-    "print.reprint",
-    "station.manage",
-    "hall.layout.edit",
-    "menu.stoplist",
-    "menu.edit",
-    "staff.manage",
-    "warehouse.view",
-    "warehouse.edit",
-  ],
-
-  cook: [
-    "kitchen.view",
-    "kitchen.item.status",
-    "print.reprint",
-    "menu.stoplist",
-  ],
-
-  support: ["terminal.service"],
-};
+export const ROLE_PERMISSIONS: Record<StaffRole, readonly Permission[]> =
+  CONTRACT_ROLE_PERMISSIONS;
 
 /** Набор прав роли. Сравнение по множеству, а не поиск по массиву. */
 export function permissionsOf(role: StaffRole): ReadonlySet<Permission> {
@@ -170,8 +71,15 @@ export function permissionsOf(role: StaffRole): ReadonlySet<Permission> {
  * длиной больше одного звена невозможна по построению.
  */
 export function canApprove(role: StaffRole, permission: Permission): boolean {
-  return (
-    isOverridable(permission) &&
-    ROLE_PERMISSIONS[role].includes(permission)
-  );
+  return isOverridable(permission) && ROLE_PERMISSIONS[role].includes(permission);
 }
+
+export {
+  CONTRACT_VERSION,
+  CONTRACT_ERROR_CODES,
+  CONTRACT_PERMISSIONS,
+  CONTRACT_ROLES,
+  ROOM_PATTERN,
+  type ContractErrorCode,
+  type ContractEventTopic,
+} from "./contract.generated";

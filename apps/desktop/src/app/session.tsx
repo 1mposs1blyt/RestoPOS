@@ -15,88 +15,23 @@ import type {
   UUID,
   Venue,
 } from "@restopos/shared-types";
-import { permissionsOf } from "@restopos/shared-types";
 import { loadState, saveState } from "../lib/storage";
+import {
+  DEMO_SHIFT_ID,
+  DEMO_VENUE,
+  approve,
+  authenticate,
+} from "../data/session-source";
 import { useEntitlements } from "./entitlements";
 import { routesFor } from "./navigation";
 
 /**
  * Смена терминала: кто за кассой, какое заведение, какой тип терминала.
  *
- * Проверка пин-кода здесь — заглушка (см. `authenticate`). Когда появится
- * `POST /auth/pin`, меняется только тело этой функции: наружу она уже сейчас
- * асинхронная и падает исключением при отказе, как и будет с сервером.
+ * Откуда берутся сотрудник и его права, знает только `data/session-source`:
+ * узел, если он настроен, иначе демо-данные. Сюда это приходит уже одинаковой
+ * формы, поэтому появление узла не потребует править ни сессию, ни экраны.
  */
-
-const DEMO_VENUE: Venue = {
-  id: "venue-demo",
-  organizationId: "org-demo",
-  name: "Кафе на Пушкинской",
-  address: "ул. Пушкинская, 12",
-  serviceMode: "tables",
-};
-
-const DEMO_SHIFT_ID: UUID = "shift-demo";
-
-/** Пин-коды живут на сервере хешами (`staff.pin_code_hash`); это только демо. */
-const DEMO_STAFF: { pin: string; staff: Staff }[] = [
-  {
-    pin: "1111",
-    staff: {
-      id: "staff-1",
-      organizationId: DEMO_VENUE.organizationId,
-      fullName: "Анна Ковалёва",
-      role: "waiter",
-    },
-  },
-  {
-    pin: "2222",
-    staff: {
-      id: "staff-2",
-      organizationId: DEMO_VENUE.organizationId,
-      fullName: "Игорь Пшеничный",
-      role: "cashier",
-    },
-  },
-  {
-    pin: "3333",
-    staff: {
-      id: "staff-3",
-      organizationId: DEMO_VENUE.organizationId,
-      fullName: "Мария Дёмина",
-      role: "manager",
-    },
-  },
-  {
-    pin: "4444",
-    staff: {
-      id: "staff-4",
-      organizationId: DEMO_VENUE.organizationId,
-      fullName: "Тимур Абдуллаев",
-      role: "cook",
-    },
-  },
-  {
-    // Вендорский доступ. На бэкенде он не сотрудник организации, а строка
-    // в `service_accounts` — иначе попадёт в квоту `max_staff` и будет виден
-    // менеджеру в списке персонала (см. `docs/access.md`).
-    pin: "9999",
-    staff: {
-      id: "service-1",
-      organizationId: DEMO_VENUE.organizationId,
-      fullName: "Тех. поддержка",
-      role: "support",
-    },
-  },
-];
-
-async function authenticate(pin: string): Promise<Staff> {
-  const match = DEMO_STAFF.find((entry) => entry.pin === pin);
-  if (!match) {
-    throw new Error("Неверный PIN-код");
-  }
-  return match.staff;
-}
 
 const ROLE_LABELS: Record<StaffRole, string> = {
   waiter: "Официант",
@@ -129,11 +64,19 @@ interface SessionValue {
   signIn: (pin: string) => Promise<void>;
   lock: () => void;
   /**
-   * Проверка чужого PIN без смены сотрудника за терминалом — для подтверждения
-   * «дорогих» действий (см. `access.tsx`). Вход и подтверждение разведены
-   * намеренно: подтверждение не должно превращаться в режим «менеджер за спиной».
+   * Подтверждение действия чужим PIN — без смены сотрудника за терминалом
+   * (см. `access.tsx`). Вход и подтверждение разведены намеренно: подтверждение
+   * не должно превращаться в режим «менеджер за спиной».
+   *
+   * Проверку «есть ли у предъявителя это право» делает источник: в демо-режиме
+   * локально, с узлом — сервер, выдавая одноразовый токен на конкретное
+   * действие. Экранам разница не видна.
    */
-  verifyPin: (pin: string) => Promise<Staff>;
+  approve: (
+    pin: string,
+    permission: Permission,
+    entityId?: UUID,
+  ) => Promise<Staff>;
   setTerminalKind: (kind: TerminalKind) => void;
   /** Только для дев-панели: на проде режим приезжает с заведением. */
   setServiceMode: (mode: ServiceMode) => void;
@@ -147,9 +90,18 @@ const TERMINAL_KIND_KEY = "terminal.kind";
 const SERVICE_MODE_KEY = "venue.serviceMode";
 const STATION_KEY = "terminal.stationId";
 
+const EMPTY_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>();
+
 export function SessionProvider({ children }: { children: ReactNode }) {
   const { features } = useEntitlements();
   const [staff, setStaff] = useState<Staff | null>(null);
+  /*
+   * Права держим отдельным состоянием, а не выводим из роли на месте: с узлом
+   * они приезжают готовым списком, и когда права станут настраиваемыми
+   * на организацию, здесь не изменится ничего.
+   */
+  const [permissions, setPermissions] =
+    useState<ReadonlySet<Permission>>(EMPTY_PERMISSIONS);
   const [terminalKind, setTerminalKindState] = useState<TerminalKind>(() =>
     loadState<TerminalKind>(TERMINAL_KIND_KEY, "pos"),
   );
@@ -179,28 +131,26 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       const available = routesFor({
         kind: terminalKind,
         serviceMode,
-        permissions: permissionsOf(authenticated.role),
+        permissions: authenticated.permissions,
         features,
       });
 
       if (available.length === 0) {
         throw new Error(
-          `${roleLabel(authenticated.role)}: на этом терминале нет доступных экранов`,
+          `${roleLabel(authenticated.staff.role)}: на этом терминале нет доступных экранов`,
         );
       }
 
-      setStaff(authenticated);
+      setStaff(authenticated.staff);
+      setPermissions(authenticated.permissions);
     },
     [terminalKind, serviceMode, features],
   );
 
-  /**
-   * Проверка чужого PIN. Сотрудника за терминалом не меняет — возвращает того,
-   * кому принадлежит пин, и на этом всё.
-   */
-  const verifyPin = useCallback((pin: string) => authenticate(pin), []);
-
-  const lock = useCallback(() => setStaff(null), []);
+  const lock = useCallback(() => {
+    setStaff(null);
+    setPermissions(EMPTY_PERMISSIONS);
+  }, []);
 
   const setTerminalKind = useCallback((kind: TerminalKind) => {
     setTerminalKindState(kind);
@@ -230,27 +180,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       terminalKind,
       stationId,
       setStationId,
-      // На проде список прав приезжает с сервера в ответе на вход по PIN,
-      // а не выводится из роли здесь: когда права станут настраиваемыми
-      // на организацию, менять придётся только бэкенд.
-      permissions: staff ? permissionsOf(staff.role) : new Set<Permission>(),
+      permissions,
       isLocked: staff === null,
       signIn,
       lock,
-      verifyPin,
+      approve,
       setTerminalKind,
       setServiceMode,
       hasRole,
     }),
     [
       staff,
+      permissions,
       terminalKind,
       serviceMode,
       stationId,
       setStationId,
       signIn,
       lock,
-      verifyPin,
       setTerminalKind,
       setServiceMode,
       hasRole,

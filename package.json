@@ -17,7 +17,9 @@
     "ios:init": "pnpm --filter @restopos/mobile tauri ios init",
     "build:desktop": "pnpm --filter @restopos/desktop tauri build",
     "build:web": "pnpm -r --filter \"./apps/*\" build",
-    "typecheck": "pnpm -r typecheck"
+    "contracts:build": "node scripts/build-contract.mjs",
+    "contracts:check": "node scripts/build-contract.mjs --check",
+    "typecheck": "pnpm contracts:check && pnpm -r typecheck"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

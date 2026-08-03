@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import type { Permission, Staff } from "@restopos/shared-types";
-import { canApprove, isOverridable } from "@restopos/shared-types";
+import { isOverridable } from "@restopos/shared-types";
 import { PinPad } from "@restopos/ui-kit";
 import { loadState, newId, saveState } from "../lib/storage";
 import { roleLabel, useSession } from "./session";
@@ -110,7 +110,7 @@ interface PendingRequest {
 }
 
 export function AccessProvider({ children }: { children: ReactNode }) {
-  const { staff, permissions, verifyPin } = useSession();
+  const { staff, permissions, approve: approvePin } = useSession();
   const [auditLog, setAuditLog] = useState<AuditEntry[]>(() =>
     loadState<AuditEntry[]>(AUDIT_KEY, []),
   );
@@ -196,20 +196,16 @@ export function AccessProvider({ children }: { children: ReactNode }) {
       const request = pendingRef.current;
       if (!request) return;
 
-      // Исключение наверх не гасим: `PinPad` подсветит и очистит поле сам.
-      const approver = await verifyPin(pin);
-
-      if (!canApprove(approver.role, request.permission)) {
-        throw new Error(
-          `${roleLabel(approver.role)} не может подтвердить это действие`,
-        );
-      }
+      // Проверку «есть ли у предъявителя это право» делает источник: локально
+      // в демо-режиме, на узле — сервер. Исключение наверх не гасим: `PinPad`
+      // подсветит и очистит поле сам.
+      const approver = await approvePin(pin, request.permission);
 
       record(request.permission, request.subject, approver);
       closePending();
       request.resolve({ approvedBy: approver });
     },
-    [verifyPin, record, closePending],
+    [approvePin, record, closePending],
   );
 
   const cancel = useCallback(() => {

@@ -70,6 +70,24 @@ export class ApiClient {
     return data;
   }
 
+  async put<T, B = unknown>(
+    path: string,
+    body?: B,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
+    const { data } = await this.http.put<T>(path, body, config);
+    return data;
+  }
+
+  async patch<T, B = unknown>(
+    path: string,
+    body?: B,
+    config?: AxiosRequestConfig,
+  ): Promise<T> {
+    const { data } = await this.http.patch<T>(path, body, config);
+    return data;
+  }
+
   private normalizeError(error: unknown): ApiError {
     if (!isAxiosError(error)) {
       return new ApiError(

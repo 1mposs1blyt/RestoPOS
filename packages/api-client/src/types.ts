@@ -49,6 +49,40 @@ export class ApiError extends Error {
   get isQuotaExceeded(): boolean {
     return this.status === 403 && this.code === "quota_exceeded";
   }
+
+  /**
+   * Права нет и получить его нельзя — кнопку гасим.
+   *
+   * Отличать от `isOverrideRequired` обязательно: там действие возможно
+   * с подтверждением, и вместо отказа нужно открыть диалог ввода PIN.
+   */
+  get isPermissionDenied(): boolean {
+    return this.status === 403 && this.code === "permission_denied";
+  }
+
+  /** Права нет, но действие подтверждается чужим PIN. */
+  get isOverrideRequired(): boolean {
+    return this.status === 403 && this.code === "override_required";
+  }
+
+  /** Подтверждение просрочено, уже использовано или выдано под другое действие. */
+  get isOverrideInvalid(): boolean {
+    return this.status === 403 && this.code === "override_invalid";
+  }
+
+  /**
+   * Роли нечего делать на этом терминале. Показывается отдельным текстом:
+   * повар у кассы должен понимать, почему его не пустили, иначе решит,
+   * что касса сломалась.
+   */
+  get isNoScreensForRole(): boolean {
+    return this.status === 403 && this.code === "no_screens_for_role";
+  }
+
+  /** Узел недоступен: обрыв сети, служба не поднята, таймаут. */
+  get isOffline(): boolean {
+    return this.status === null;
+  }
 }
 
 /** Имя комнаты socket.io. Должно совпадать с тем, что строит бэкенд. */

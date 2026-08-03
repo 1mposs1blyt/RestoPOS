@@ -1,0 +1,138 @@
+{
+  "$comment": "Канонический контракт RestoPOS. Правится РУКАМИ, читается обеими сторонами. TypeScript-типы генерируются отсюда: pnpm contracts:build. См. contracts/README.md",
+  "version": 1,
+
+  "conventions": {
+    "money": "строка с двумя знаками после точки: \"420.00\". Не число с плавающей точкой",
+    "ids": "UUID v4 в строковом виде",
+    "time": "ISO-8601 с указанием зоны",
+    "idempotency": "любое создание сущности принимает clientId от терминала; повторный запрос с тем же clientId возвращает уже созданное, а не дубль",
+    "roomPattern": "venue:{venueId}:{terminalKind}"
+  },
+
+  "roles": ["waiter", "cashier", "manager", "cook", "support"],
+
+  "permissions": [
+    "order.view",
+    "order.create",
+    "order.item.add",
+    "order.send",
+    "order.item.serve",
+    "order.item.void",
+    "order.discount",
+    "order.cancel",
+    "order.foreign",
+    "payment.accept",
+    "payment.refund",
+    "cash.drawer",
+    "shift.open",
+    "shift.close",
+    "report.x",
+    "report.z",
+    "kitchen.view",
+    "kitchen.item.status",
+    "print.reprint",
+    "station.manage",
+    "hall.layout.edit",
+    "menu.stoplist",
+    "menu.edit",
+    "staff.manage",
+    "warehouse.view",
+    "warehouse.edit",
+    "terminal.service"
+  ],
+
+  "overridablePermissions": [
+    "order.item.void",
+    "order.discount",
+    "order.cancel",
+    "order.foreign",
+    "payment.refund"
+  ],
+
+  "rolePermissions": {
+    "waiter": [
+      "order.view",
+      "order.create",
+      "order.item.add",
+      "order.send",
+      "order.item.serve",
+      "payment.accept"
+    ],
+    "cashier": [
+      "order.view",
+      "order.create",
+      "order.item.add",
+      "order.send",
+      "order.item.serve",
+      "order.cancel",
+      "order.foreign",
+      "payment.accept",
+      "payment.refund",
+      "cash.drawer",
+      "shift.open",
+      "shift.close",
+      "report.x",
+      "kitchen.item.status",
+      "print.reprint",
+      "menu.stoplist"
+    ],
+    "manager": [
+      "order.view",
+      "order.create",
+      "order.item.add",
+      "order.send",
+      "order.item.serve",
+      "order.item.void",
+      "order.discount",
+      "order.cancel",
+      "order.foreign",
+      "payment.accept",
+      "payment.refund",
+      "cash.drawer",
+      "shift.open",
+      "shift.close",
+      "report.x",
+      "report.z",
+      "kitchen.view",
+      "kitchen.item.status",
+      "print.reprint",
+      "station.manage",
+      "hall.layout.edit",
+      "menu.stoplist",
+      "menu.edit",
+      "staff.manage",
+      "warehouse.view",
+      "warehouse.edit"
+    ],
+    "cook": [
+      "kitchen.view",
+      "kitchen.item.status",
+      "print.reprint",
+      "menu.stoplist"
+    ],
+    "support": ["terminal.service"]
+  },
+
+  "errorCodes": [
+    "invalid_pin",
+    "staff_not_in_venue",
+    "no_screens_for_role",
+    "permission_denied",
+    "override_required",
+    "override_invalid",
+    "feature_not_available",
+    "quota_exceeded",
+    "shift_not_open",
+    "order_not_editable"
+  ],
+
+  "eventTopics": [
+    "order.created",
+    "order.updated",
+    "order_item.status_changed",
+    "table.status_changed",
+    "print_job.failed",
+    "stoplist.changed"
+  ]
+}

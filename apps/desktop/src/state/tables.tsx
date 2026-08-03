@@ -7,40 +7,18 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { UUID } from "@restopos/shared-types";
+import type { TableLayout, TableShape, UUID } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
 import { nextTableLabel } from "./table-numbering";
 
 export { findDuplicateLabels } from "./table-numbering";
 
-export type TableShape = "rectangle" | "circle" | "square";
-
-/**
- * Стол на схеме зала.
- *
- * Отличается от `Table` из shared-types тем, что несёт геометрию расстановки
- * и НЕ несёт статуса: занятость стола вычисляется из его заказов
- * (см. `useTableStatus`), иначе один и тот же факт хранился бы в двух местах
- * и они бы разъезжались.
+/*
+ * Геометрия расстановки переехала в общие типы: её хранит узел, потому что
+ * схема, нарисованная на одном терминале, обязана открыться на остальных.
+ * Реэкспорт оставлен, чтобы экраны не переписывали импорты.
  */
-export interface TableLayout {
-  id: UUID;
-  venueId: UUID;
-  label: string;
-  shape: TableShape;
-  /**
-   * Центр стола в долях холста (0..1), а не в пикселях.
-   *
-   * Пиксели привязывали расстановку к разрешению того терминала, где её
-   * рисовали. Доли переносятся на любой экран, и холст конструктора совпадает
-   * с холстом просмотра — что разложил, то и видишь, без масштабирования.
-   */
-  cx: number;
-  cy: number;
-  /** Размер в пикселях: он НЕ масштабируется, иначе стол уходит под палец. */
-  width: number;
-  height: number;
-}
+export type { TableLayout, TableShape };
 
 const STORAGE_KEY = "hall.layout";
 /** Ключ до появления сторов — читаем один раз, чтобы не потерять расстановку. */
