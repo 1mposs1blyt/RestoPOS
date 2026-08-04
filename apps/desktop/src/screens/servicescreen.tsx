@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
-import { PERMISSION_LABELS, useAccess } from "../app/access";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
 import { useSession } from "../app/session";
 import { clearAll } from "../lib/storage";
@@ -72,7 +71,6 @@ export function ServiceScreen() {
         </Section>
 
         <Diagnostics />
-        <AuditLog />
         <DangerZone />
       </div>
     </div>
@@ -140,60 +138,15 @@ function Diagnostics() {
   );
 }
 
-/**
- * Журнал подтверждений.
+/*
+ * Журнал опасных операций жил здесь и переехал в `screens/auditscreen.tsx`
+ * под право `audit.view`.
  *
- * Механизм подтверждения существует ради разбора недостач — без журнала он
- * бессмыслен. Здесь журнал локальный; настоящий живёт в БД (`audit_log`)
- * и переживает очистку терминала.
+ * Причина не косметическая: у вендорского `support` ровно одно право
+ * `terminal.service` и он не должен видеть ни заказов, ни денег
+ * (`docs/access.md`), а в журнале есть и объекты действий, и имена
+ * сотрудников. Разбирает недостачу менеджер — ему экран и достался.
  */
-function AuditLog() {
-  const { auditLog, clearAuditLog } = useAccess();
-
-  return (
-    <Section
-      title="Журнал подтверждений"
-      hint={`Записей: ${auditLog.length}. Локальный — до появления бэкенда`}
-    >
-      {auditLog.length === 0 ? (
-        <p className="py-2 text-sm text-slate-600">Подтверждений не было.</p>
-      ) : (
-        <>
-          <ul className="max-h-72 w-full space-y-2 overflow-y-auto">
-            {auditLog.map((entry) => (
-              <li
-                key={entry.id}
-                className="rounded-lg border border-slate-800 bg-slate-950/60 p-3"
-              >
-                <div className="flex items-baseline justify-between gap-3">
-                  <span className="text-sm font-bold text-slate-200">
-                    {PERMISSION_LABELS[entry.permission]}
-                  </span>
-                  <span className="font-mono text-xs tabular-nums text-slate-500">
-                    {new Date(entry.at).toLocaleString("ru-RU")}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500">
-                  {entry.subject ?? "—"} · {entry.actorRole} {entry.actorName}
-                  {entry.approvedByName
-                    ? ` · подтвердил ${entry.approvedByName}`
-                    : " · своим правом"}
-                </p>
-              </li>
-            ))}
-          </ul>
-          <button
-            type="button"
-            onClick={clearAuditLog}
-            className="min-h-11 rounded-lg border border-slate-700 bg-slate-800 px-4 text-sm font-semibold text-slate-400 transition hover:bg-slate-700 active:scale-95"
-          >
-            Очистить журнал
-          </button>
-        </>
-      )}
-    </Section>
-  );
-}
 
 /**
  * Сброс терминала. Подтверждение в два касания, а не `confirm()`: системный

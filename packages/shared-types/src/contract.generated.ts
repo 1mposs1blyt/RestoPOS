@@ -30,13 +30,19 @@ export type ContractPermission =
   | "order.discount"
   | "order.cancel"
   | "order.foreign"
+  | "order.item.split"
   | "payment.accept"
   | "payment.refund"
   | "cash.drawer"
+  | "cash.deposit"
+  | "cash.withdraw"
+  | "cashier.change"
   | "shift.open"
   | "shift.close"
   | "report.x"
   | "report.z"
+  | "report.view"
+  | "audit.view"
   | "kitchen.view"
   | "kitchen.item.status"
   | "print.reprint"
@@ -45,6 +51,13 @@ export type ContractPermission =
   | "menu.stoplist"
   | "menu.edit"
   | "staff.manage"
+  | "staff.attendance"
+  | "staff.self"
+  | "guest.manage"
+  | "delivery.view"
+  | "delivery.manage"
+  | "document.view"
+  | "document.create"
   | "warehouse.view"
   | "warehouse.edit"
   | "terminal.service";
@@ -59,7 +72,11 @@ export type ContractErrorCode =
   | "feature_not_available"
   | "quota_exceeded"
   | "shift_not_open"
-  | "order_not_editable";
+  | "order_not_editable"
+  | "cash_shift_not_open"
+  | "cash_shift_already_open"
+  | "cash_insufficient"
+  | "staff_shift_not_open";
 
 export type ContractEventTopic =
   | "order.created"
@@ -67,7 +84,13 @@ export type ContractEventTopic =
   | "order_item.status_changed"
   | "table.status_changed"
   | "print_job.failed"
-  | "stoplist.changed";
+  | "stoplist.changed"
+  | "cash_shift.opened"
+  | "cash_shift.closed"
+  | "cash_operation.created"
+  | "staff_shift.changed"
+  | "delivery.status_changed"
+  | "audit.recorded";
 
 export const CONTRACT_ROLES: readonly ContractRole[] = [
   "waiter",
@@ -87,13 +110,19 @@ export const CONTRACT_PERMISSIONS: readonly ContractPermission[] = [
   "order.discount",
   "order.cancel",
   "order.foreign",
+  "order.item.split",
   "payment.accept",
   "payment.refund",
   "cash.drawer",
+  "cash.deposit",
+  "cash.withdraw",
+  "cashier.change",
   "shift.open",
   "shift.close",
   "report.x",
   "report.z",
+  "report.view",
+  "audit.view",
   "kitchen.view",
   "kitchen.item.status",
   "print.reprint",
@@ -102,6 +131,13 @@ export const CONTRACT_PERMISSIONS: readonly ContractPermission[] = [
   "menu.stoplist",
   "menu.edit",
   "staff.manage",
+  "staff.attendance",
+  "staff.self",
+  "guest.manage",
+  "delivery.view",
+  "delivery.manage",
+  "document.view",
+  "document.create",
   "warehouse.view",
   "warehouse.edit",
   "terminal.service",
@@ -118,6 +154,10 @@ export const CONTRACT_ERROR_CODES: readonly ContractErrorCode[] = [
   "quota_exceeded",
   "shift_not_open",
   "order_not_editable",
+  "cash_shift_not_open",
+  "cash_shift_already_open",
+  "cash_insufficient",
+  "staff_shift_not_open",
 ];
 
 export const CONTRACT_EVENT_TOPICS: readonly ContractEventTopic[] = [
@@ -127,6 +167,12 @@ export const CONTRACT_EVENT_TOPICS: readonly ContractEventTopic[] = [
   "table.status_changed",
   "print_job.failed",
   "stoplist.changed",
+  "cash_shift.opened",
+  "cash_shift.closed",
+  "cash_operation.created",
+  "staff_shift.changed",
+  "delivery.status_changed",
+  "audit.recorded",
 ];
 
 /** Права, которые можно получить разово — подтверждением старшего сотрудника. */
@@ -148,7 +194,11 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
     "order.item.add",
     "order.send",
     "order.item.serve",
+    "order.item.split",
     "payment.accept",
+    "guest.manage",
+    "delivery.view",
+    "staff.self",
   ],
   cashier: [
     "order.view",
@@ -156,17 +206,27 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
     "order.item.add",
     "order.send",
     "order.item.serve",
+    "order.item.split",
     "order.cancel",
     "order.foreign",
     "payment.accept",
     "payment.refund",
     "cash.drawer",
+    "cash.deposit",
+    "cash.withdraw",
+    "cashier.change",
     "shift.open",
     "shift.close",
     "report.x",
+    "report.view",
     "kitchen.item.status",
     "print.reprint",
     "menu.stoplist",
+    "guest.manage",
+    "delivery.view",
+    "delivery.manage",
+    "document.view",
+    "staff.self",
   ],
   manager: [
     "order.view",
@@ -175,16 +235,22 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
     "order.send",
     "order.item.serve",
     "order.item.void",
+    "order.item.split",
     "order.discount",
     "order.cancel",
     "order.foreign",
     "payment.accept",
     "payment.refund",
     "cash.drawer",
+    "cash.deposit",
+    "cash.withdraw",
+    "cashier.change",
     "shift.open",
     "shift.close",
     "report.x",
     "report.z",
+    "report.view",
+    "audit.view",
     "kitchen.view",
     "kitchen.item.status",
     "print.reprint",
@@ -193,14 +259,22 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
     "menu.stoplist",
     "menu.edit",
     "staff.manage",
+    "staff.attendance",
+    "guest.manage",
+    "delivery.view",
+    "delivery.manage",
+    "document.view",
+    "document.create",
     "warehouse.view",
     "warehouse.edit",
+    "staff.self",
   ],
   cook: [
     "kitchen.view",
     "kitchen.item.status",
     "print.reprint",
     "menu.stoplist",
+    "staff.self",
   ],
   support: [
     "terminal.service",

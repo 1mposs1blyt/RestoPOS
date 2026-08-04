@@ -28,12 +28,38 @@ export type OrdersAction =
   | { type: "order/open"; order: Order }
   | { type: "order/cancel"; orderId: UUID }
   | { type: "order/send"; orderId: UUID; autoReadyStationIds: readonly UUID[] }
-  | { type: "order/pay"; payment: Payment }
+  /**
+   * Оплата приходит **набором** строк, а не по одной: гость платит частью
+   * картой, частью наличными, и чек закрывается целиком либо не закрывается.
+   * Закрытие по одной строке означало бы промежуточное состояние «оплачен
+   * наполовину», которого у чека не бывает.
+   */
+  | {
+      type: "order/pay";
+      orderId: UUID;
+      payments: Payment[];
+      cashShiftNumber: number;
+    }
+  | { type: "order/refund"; payments: Payment[] }
   | { type: "item/add"; item: OrderItem }
   | { type: "item/quantity"; itemId: UUID; quantity: number }
   | { type: "item/remove"; itemId: UUID }
   | { type: "item/void"; itemId: UUID }
-  | { type: "item/status"; itemId: UUID; status: OrderItemStatus };
+  | { type: "item/status"; itemId: UUID; status: OrderItemStatus }
+  /**
+   * Деление блюда на доли. `parts` обязаны в сумме давать текущее количество —
+   * считает их `lib/split-quantity.ts`, здесь только запись.
+   * `guestNumbers` — кому какая доля, если делят между гостями.
+   */
+  | {
+      type: "item/split";
+      itemId: UUID;
+      parts: number[];
+      ids: UUID[];
+      guestNumbers?: (number | null)[];
+    }
+  | { type: "item/guest"; itemId: UUID; guestNumber: number | null }
+  | { type: "order/guests"; orderId: UUID; guestCount: number };
 
 /** Заказ считается активным, пока не оплачен и не отменён. */
 export const ACTIVE_STATUSES = new Set<Order["status"]>([
@@ -50,6 +76,26 @@ export function nextOrderNumber(state: OrdersState, shiftId: UUID): number {
     // сохранённые версией без номера, и один `undefined` превратил бы
     // весь `Math.max` в NaN.
     .filter((value) => Number.isFinite(value));
+
+  return used.length === 0 ? 1 : Math.max(...used) + 1;
+}
+
+/**
+ * Следующий номер чека в кассовой смене.
+ *
+ * Нумерация сквозная внутри смены и не переиспользуется: по паре «смена + чек»
+ * закрытый заказ ищут в реестре счетов и сверяют с Z-отчётом. Считаем от уже
+ * выданных номеров, а не от количества чеков: отменённый заказ номер не занял,
+ * а удалённый из локального состояния — уже занял.
+ */
+export function nextReceiptNumber(
+  state: OrdersState,
+  cashShiftNumber: number,
+): number {
+  const used = Object.values(state.orders)
+    .filter((order) => order.cashShiftNumber === cashShiftNumber)
+    .map((order) => order.receiptNumber)
+    .filter((value): value is number => Number.isFinite(value));
 
   return used.length === 0 ? 1 : Math.max(...used) + 1;
 }
@@ -160,16 +206,48 @@ export function reducer(state: OrdersState, action: OrdersAction): OrdersState {
     }
 
     case "order/pay": {
-      const order = state.orders[action.payment.orderId];
+      const order = state.orders[action.orderId];
       if (!order) return state;
+      /*
+       * Повторная оплата уже закрытого чека — это не «доплата», а двойное
+       * списание с гостя. Двойное касание по «Оплатить» на сенсорном экране
+       * даёт ровно этот сценарий, и снаружи оно неотличимо от первого нажатия.
+       */
+      if (order.status === "paid") return state;
+      if (action.payments.length === 0) return state;
+
+      const payments = { ...state.payments };
+      for (const payment of action.payments) payments[payment.id] = payment;
+
       return {
         ...state,
-        orders: { ...state.orders, [order.id]: { ...order, status: "paid" } },
-        payments: {
-          ...state.payments,
-          [action.payment.id]: action.payment,
+        orders: {
+          ...state.orders,
+          [order.id]: {
+            ...order,
+            status: "paid",
+            cashShiftNumber: action.cashShiftNumber,
+            receiptNumber: nextReceiptNumber(state, action.cashShiftNumber),
+          },
         },
+        payments,
       };
+    }
+
+    /*
+     * Возврат — новые строки со ссылкой `refundOf`, а не правка исходных
+     * (инвариант №6: `payments` иммутабельны, LWW на платеже это потерянная
+     * выручка). Статус заказа не меняется: чек был закрыт и остаётся закрытым,
+     * возврат — отдельный факт поверх него.
+     */
+    case "order/refund": {
+      if (action.payments.length === 0) return state;
+      const payments = { ...state.payments };
+      for (const payment of action.payments) {
+        if (payments[payment.id]) continue;
+        payments[payment.id] = payment;
+      }
+      return { ...state, payments };
     }
 
     case "item/add": {
@@ -248,6 +326,76 @@ export function reducer(state: OrdersState, action: OrdersAction): OrdersState {
         items: {
           ...state.items,
           [item.id]: { ...item, status: action.status },
+        },
+      };
+    }
+
+    /*
+     * Деление блюда.
+     *
+     * Исходная позиция не удаляется, а помечается `split` — это append-only
+     * (инвариант №6): блюдо приготовлено, и стирать его из чека нельзя.
+     * Из суммы она выпадает, деньги несут доли — иначе с гостя возьмут дважды.
+     *
+     * Доли наследуют статус исходной позиции, а не начинают с `new`: делят
+     * обычно уже поданное блюдо, и «новая» половина борща уехала бы на кухню
+     * второй раз.
+     */
+    case "item/split": {
+      const item = state.items[action.itemId];
+      if (!item) return state;
+      /*
+       * Делят **еду**, а не заказ: только то, что уже приготовлено.
+       *
+       * Позиция в `new` или `cooking` уехала бы на станцию двумя строками
+       * по 0,5 — повар не понимает, что готовить полпорции, и либо сделает
+       * две, либо одну. До готовности количество правят обычным способом,
+       * а делят счёт уже за столом, когда блюдо съедено.
+       */
+      if (item.status !== "ready" && item.status !== "served") return state;
+      if (action.parts.length < 2) return state;
+      // Идентификаторы приходят снаружи (их выдаёт `newId`), но их должно
+      // хватить на все доли — иначе часть блюда потерялась бы молча.
+      if (action.ids.length !== action.parts.length) return state;
+
+      const items = { ...state.items };
+      items[item.id] = { ...item, status: "split" };
+
+      action.parts.forEach((quantity, index) => {
+        items[action.ids[index]] = {
+          ...item,
+          id: action.ids[index],
+          quantity,
+          splitOf: item.id,
+          guestNumber: action.guestNumbers?.[index] ?? null,
+        };
+      });
+
+      return { ...state, items };
+    }
+
+    case "item/guest": {
+      const item = state.items[action.itemId];
+      if (!item) return state;
+      return {
+        ...state,
+        items: {
+          ...state.items,
+          [item.id]: { ...item, guestNumber: action.guestNumber },
+        },
+      };
+    }
+
+    case "order/guests": {
+      const order = state.orders[action.orderId];
+      if (!order) return state;
+      // Ноль гостей за занятым столом — это промах по кнопке, а не факт.
+      if (action.guestCount < 1) return state;
+      return {
+        ...state,
+        orders: {
+          ...state.orders,
+          [order.id]: { ...order, guestCount: action.guestCount },
         },
       };
     }

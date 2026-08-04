@@ -14,6 +14,9 @@ const ITEM_STATUS: Record<OrderItemStatus, { label: string; className: string }>
   ready: { label: "Готово", className: "bg-emerald-100 text-emerald-900" },
   served: { label: "Подано", className: "bg-slate-100 text-slate-500" },
   voided: { label: "Сторно", className: "bg-red-100 text-red-900" },
+  // Не «сторно»: блюдо есть и приготовлено, просто платят за него несколько
+  // гостей долями. Цвет отдельный, иначе разделённое читается как отменённое.
+  split: { label: "Разделено", className: "bg-orange-100 text-orange-900" },
 };
 
 export interface OrderStatusBadgeProps {

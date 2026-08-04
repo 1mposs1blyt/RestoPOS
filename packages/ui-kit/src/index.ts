@@ -9,6 +9,8 @@ export { PinDots } from "./Auth/PinDots";
 export type { PinDotsProps } from "./Auth/PinDots";
 export { NumKeyboard } from "./medium/NumKeyboard";
 export type { NumKeyboardKey, NumKeyboardProps } from "./medium/NumKeyboard";
+export { TextKeyboard } from "./medium/TextKeyboard";
+export type { TextKeyboardLayout, TextKeyboardProps } from "./medium/TextKeyboard";
 export { OrderCard } from "./Order/OrderCard";
 export type { OrderCardProps } from "./Order/OrderCard";
 export { OrderStatusBadge, OrderItemStatusBadge } from "./Order/OrderStatusBadge";

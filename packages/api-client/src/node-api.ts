@@ -7,7 +7,6 @@ import type {
   OrderItem,
   OrderItemStatus,
   Payment,
-  PaymentMethod,
   Permission,
   PlanCode,
   PrepStation,
@@ -100,7 +99,8 @@ export interface OpenShiftResult {
 export interface OrderSnapshot {
   order: Order;
   items: OrderItem[];
-  payment: Payment | null;
+  /** Строк оплаты бывает несколько: часть картой, часть наличными, плюс возвраты. */
+  payments: Payment[];
 }
 
 export interface CreateOrderRequest {
@@ -117,14 +117,26 @@ export interface AddItemRequest {
   modifierIds?: UUID[];
 }
 
-export interface PayRequest {
-  clientId: UUID;
-  method: PaymentMethod;
-  /** Сколько дал гость. Нужно для сдачи и сверки кассы. */
-  received?: string;
+/**
+ * Одна строка оплаты в запросе на закрытие чека.
+ *
+ * Эквайринговые поля живут на строке, а не на запросе: карт в одном чеке может
+ * быть две (гости платят раздельно), и у каждой свой код авторизации.
+ */
+export interface PaymentLineRequest {
+  paymentTypeId: UUID;
+  amount: string;
+  /** Сколько дал гость. Нужно для сдачи и сверки кассы. Только для наличных. */
+  tendered?: string;
   /** Результат эквайринга — заполняется терминалом после ответа банка. */
   authCode?: string;
   rrn?: string;
+}
+
+export interface PayRequest {
+  clientId: UUID;
+  /** Чек закрывается набором строк целиком: «оплачен наполовину» не бывает. */
+  payments: PaymentLineRequest[];
 }
 
 /**

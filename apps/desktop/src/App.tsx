@@ -16,14 +16,29 @@ import { SessionProvider, roleLabel, useSession } from "./app/session";
 import { AppShell } from "./layout/AppShell";
 import { OrdersProvider } from "./state/orders";
 import { PrintingProvider } from "./state/printing";
+import { DeliveryProvider } from "./state/delivery";
+import { GuestsProvider } from "./state/guests";
+import { ShiftsProvider } from "./state/shifts";
+import { StopListProvider } from "./state/stoplist";
 import { StationsProvider } from "./state/stations";
 import { TablesProvider } from "./state/tables";
 import { BlockScreen } from "./screens/blockscreen";
+import { AttendanceScreen } from "./screens/attendancescreen";
+import { AuditScreen } from "./screens/auditscreen";
+import { CashScreen } from "./screens/cashscreen";
 import { CounterScreen } from "./screens/counterscreen";
+import { DeliveryScreen } from "./screens/deliveryscreen";
+import { DocumentsScreen } from "./screens/documentsscreen";
+import { PaymentScreen } from "./screens/paymentscreen";
+import { GuestsScreen } from "./screens/guestsscreen";
 import { KitchenScreen } from "./screens/kitchenscreen";
+import { MainMenuScreen } from "./screens/mainmenuscreen";
 import { OrderScreen } from "./screens/orderscreen";
+import { PersonalScreen } from "./screens/personalscreen";
+import { ReportsScreen } from "./screens/reportsscreen";
 import { ServiceScreen } from "./screens/servicescreen";
 import { StationsScreen } from "./screens/stationsscreen";
+import { StopListScreen } from "./screens/stoplistscreen";
 import { TableScheme } from "./screens/tablescheme";
 
 /**
@@ -48,7 +63,7 @@ export const App = () => (
  * (см. `lib/storage.ts`).
  */
 function Terminal() {
-  const { isLocked, venue, shiftId, staff, terminalKind, permissions } =
+  const { isLocked, venue, shiftId, terminalId, staff, terminalKind, permissions } =
     useSession();
   const { features } = useEntitlements();
 
@@ -65,7 +80,9 @@ function Terminal() {
     [terminalKind, venue.serviceMode, permissions, features],
   );
 
-  if (isLocked) {
+  // `staff` в проверке не лишний: он сужает тип для провайдеров ниже, которым
+  // сотрудник нужен непустым (личная смена принадлежит человеку, а не терминалу).
+  if (isLocked || !staff) {
     return <BlockScreen />;
   }
 
@@ -90,21 +107,41 @@ function Terminal() {
       {/* Станции выше заказов: отправка на кухню решает по ним, куда уезжает
           позиция и надо ли считать её готовой сразу (станция без экрана). */}
       <StationsProvider>
-        <TablesProvider venueId={venue.id}>
-          <OrdersProvider
-            venueId={venue.id}
-            shiftId={shiftId}
-            waiterId={staff?.id ?? null}
-          >
-            <PrintingProvider>
-              <NavigationProvider initialRoute={initialRoute}>
-                <AppShell scope={scope}>
-                  <CurrentScreen scope={scope} />
-                </AppShell>
-              </NavigationProvider>
-            </PrintingProvider>
-          </OrdersProvider>
-        </TablesProvider>
+        {/* Смены выше заказов: заказ закрывается в кассовую смену, и её номер
+            попадает в чек. Обратный порядок означал бы, что чек уже создан,
+            а смены, к которой он относится, ещё нет. */}
+        <ShiftsProvider
+          venueId={venue.id}
+          terminalId={terminalId}
+          staffId={staff.id}
+          tracksAttendance={permissions.has("staff.self")}
+        >
+          {/* Стоп-лист выше заказов: добавление позиции обязано знать,
+              не кончилось ли блюдо. */}
+          <StopListProvider staffId={staff.id}>
+            <TablesProvider venueId={venue.id}>
+              <OrdersProvider
+                venueId={venue.id}
+                shiftId={shiftId}
+                waiterId={staff.id}
+              >
+                <PrintingProvider>
+                  {/* Доставка ниже заказов: она надстройка над ними — позиции
+                      и деньги живут в заказе, здесь только адрес, курьер и срок. */}
+                  <DeliveryProvider venueId={venue.id}>
+                    <GuestsProvider>
+                      <NavigationProvider initialRoute={initialRoute}>
+                        <AppShell scope={scope}>
+                          <CurrentScreen scope={scope} />
+                        </AppShell>
+                      </NavigationProvider>
+                    </GuestsProvider>
+                  </DeliveryProvider>
+                </PrintingProvider>
+              </OrdersProvider>
+            </TablesProvider>
+          </StopListProvider>
+        </ShiftsProvider>
       </StationsProvider>
     </AccessProvider>
   );
@@ -137,6 +174,9 @@ function CurrentScreen({ scope }: { scope: AccessScope }) {
   if (!isAllowed) return null;
 
   switch (route.name) {
+    case "menu":
+      return <MainMenuScreen scope={scope} />;
+
     case "hall":
       return <TableScheme />;
 
@@ -145,6 +185,12 @@ function CurrentScreen({ scope }: { scope: AccessScope }) {
 
     case "counter":
       return <CounterScreen />;
+
+    case "payment":
+      return <PaymentScreen orderId={route.orderId} />;
+
+    case "cash":
+      return <CashScreen />;
 
     case "kitchen":
       // Гейт — это UX-апсейл, а не защита: за реальный отказ отвечает
@@ -157,6 +203,36 @@ function CurrentScreen({ scope }: { scope: AccessScope }) {
 
     case "stations":
       return <StationsScreen />;
+
+    case "personal":
+      return <PersonalScreen />;
+
+    case "audit":
+      return <AuditScreen />;
+
+    case "reports":
+      return <ReportsScreen />;
+
+    case "stoplist":
+      return <StopListScreen />;
+
+    case "guests":
+      return <GuestsScreen />;
+
+    case "documents":
+      return <DocumentsScreen />;
+
+    case "attendance":
+      return <AttendanceScreen />;
+
+    case "delivery":
+      // Гейт — апсейл, а не защита: за отказ отвечает `requireFeature('delivery')`
+      // на узле (инвариант №1).
+      return (
+        <FeatureGate feature="delivery">
+          <DeliveryScreen />
+        </FeatureGate>
+      );
 
     case "service":
       return <ServiceScreen />;

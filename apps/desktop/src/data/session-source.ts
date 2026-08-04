@@ -33,6 +33,14 @@ export const DEMO_VENUE: Venue = {
 
 export const DEMO_SHIFT_ID: UUID = "shift-demo";
 
+/**
+ * Идентификатор этого терминала. На проде приезжает с регистрации терминала
+ * вместе с его типом и отделением (в iiko это видно на экране «Статус»:
+ * группа «Главная касса, 1ФР», отделение «Зал»). Кассовая смена принадлежит
+ * терминалу, а не заведению: у двух касс в одном зале свои ФР и своя нумерация.
+ */
+export const DEMO_TERMINAL_ID: UUID = "terminal-demo";
+
 /** Пин-коды живут на сервере хешами (`staff.pin_code_hash`); это только демо. */
 const DEMO_STAFF: { pin: string; staff: Staff }[] = [
   {
@@ -97,6 +105,24 @@ function demoStaff(pin: string): Staff {
   const match = DEMO_STAFF.find((entry) => entry.pin === pin);
   if (!match) throw new Error("Неверный PIN-код");
   return match.staff;
+}
+
+/**
+ * Список персонала заведения.
+ *
+ * Нужен экранам, которые показывают **чужие** записи: табель явок, журнал,
+ * смена кассира. Явка хранит только `staffId` — имя приходится искать,
+ * и хранить его копией в каждой явке нельзя: переименовали сотрудника,
+ * и половина табеля осталась со старым именем.
+ *
+ * На проде приезжает с узла (`GET /staff`), здесь — из демо-набора.
+ */
+export function staffRoster(): Staff[] {
+  return DEMO_STAFF.map((entry) => entry.staff);
+}
+
+export function findStaff(staffId: UUID): Staff | undefined {
+  return DEMO_STAFF.find((entry) => entry.staff.id === staffId)?.staff;
 }
 
 /**

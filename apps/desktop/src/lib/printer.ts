@@ -35,6 +35,23 @@ export function isTauri(): boolean {
   return typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 }
 
+/**
+ * Импульс открытия денежного ящика.
+ *
+ * Ящик подключён к чековому принтеру, а не к компьютеру: открывает его
+ * ESC/POS-команда, уходящая тому же принтеру. Отдельного «драйвера ящика»
+ * не существует — поэтому и хост с портом те же, что у печати.
+ */
+export async function openCashDrawer(host: string, port: number): Promise<void> {
+  if (!isTauri()) {
+    throw new Error(
+      "Денежный ящик доступен только в приложении кассы, не в браузере",
+    );
+  }
+
+  await invoke("open_cash_drawer", { host, port });
+}
+
 export async function printTicket(request: PrintTicketRequest): Promise<void> {
   if (!isTauri()) {
     // Ошибка, а не молчаливый успех: задание должно осесть в очереди

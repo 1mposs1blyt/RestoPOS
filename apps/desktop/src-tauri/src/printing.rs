@@ -152,11 +152,62 @@ pub async fn print_ticket(request: PrintRequest) -> Result<(), String> {
         .map_err(|e| format!("Не удалось запустить печать: {e}"))?
 }
 
+/// Импульс открытия денежного ящика: `ESC p m t1 t2`.
+///
+/// Ящик подключён к принтеру, а не к компьютеру, поэтому «драйвера ящика»
+/// не существует — открывает его команда, уходящая тому же сокету, что и марки.
+/// Длительности импульса заданы в единицах по 2 мс: 50 мс на замыкание,
+/// 50 мс на размыкание. Меньше — соленоид не успевает сработать, больше —
+/// греется впустую.
+fn drawer_pulse() -> [u8; 5] {
+    [ESC, b'p', 0x00, 25, 25]
+}
+
+fn kick_drawer(host: String, port: u16) -> Result<(), String> {
+    let timeout = Duration::from_millis(DEFAULT_TIMEOUT_MS);
+
+    let address = format!("{host}:{port}")
+        .to_socket_addrs()
+        .map_err(|e| format!("Не удалось разрешить адрес {host}: {e}"))?
+        .next()
+        .ok_or_else(|| format!("Адрес {host} ни во что не разрешился"))?;
+
+    let mut stream = TcpStream::connect_timeout(&address, timeout)
+        .map_err(|e| format!("Принтер {address} не отвечает: {e}"))?;
+
+    stream
+        .set_write_timeout(Some(timeout))
+        .map_err(|e| format!("Не удалось выставить таймаут записи: {e}"))?;
+
+    stream
+        .write_all(&drawer_pulse())
+        .map_err(|e| format!("Обрыв при открытии ящика: {e}"))?;
+    stream
+        .flush()
+        .map_err(|e| format!("Не удалось дописать импульс: {e}"))?;
+
+    Ok(())
+}
+
+/// Открыть денежный ящик.
+#[tauri::command]
+pub async fn open_cash_drawer(host: String, port: u16) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || kick_drawer(host, port))
+        .await
+        .map_err(|e| format!("Не удалось открыть ящик: {e}"))?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::Read;
     use std::net::TcpListener;
+
+    #[test]
+    fn импульс_ящика_это_esc_p_с_двумя_длительностями() {
+        // ESC p — стандартная ESC/POS-команда; ноль это первый разъём ящика.
+        assert_eq!(drawer_pulse(), [0x1B, b'p', 0x00, 25, 25]);
+    }
 
     #[test]
     fn кириллица_кодируется_в_cp866() {

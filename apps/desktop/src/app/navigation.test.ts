@@ -1,12 +1,24 @@
 import type { FeatureCode, Permission } from "@restopos/shared-types";
 import { permissionsOf } from "@restopos/shared-types";
 import { describe, expect, it } from "vitest";
-import { defaultRouteFor, routesFor, type AccessScope } from "./navigation";
+import {
+  defaultRouteFor,
+  hasWorkOn,
+  routesFor,
+  workRoutesFor as workRoutes,
+  type AccessScope,
+} from "./navigation";
 
 /**
  * Выдача экранов — пересечение четырёх независимых условий: тип терминала,
  * режим обслуживания, право сотрудника и оплаченный модуль. Тесты закрепляют
  * именно независимость: каждое условие обязано отсекать само по себе.
+ */
+
+/*
+ * `workRoutes` — рабочие экраны, без сопутствующих. Личная страница и экран
+ * оплаты доступны почти всегда и в проверках «что именно доступно» только
+ * шумят; отдельно их закрепляет блок «сопутствующие экраны» ниже.
  */
 
 const ALL_FEATURES: FeatureCode[] = [
@@ -32,22 +44,38 @@ function scope(patch: Partial<AccessScope> = {}): AccessScope {
 }
 
 describe("режим обслуживания", () => {
-  it("в зале даёт схему и экран заказа", () => {
-    expect(routesFor(scope())).toEqual(["hall", "order"]);
+  /*
+   * Проверяем именно противопоставление «зал против прилавка», а не полный
+   * список: экранов, не зависящих от режима (доставка, касса), со временем
+   * становится больше, и сравнение списка целиком ломалось бы на каждом новом.
+   */
+  it("в зале даёт схему зала, а экран заказа — только как сопутствующий", () => {
+    expect(workRoutes(scope())).toContain("hall");
+    expect(workRoutes(scope())).not.toContain("counter");
+    expect(routesFor(scope())).toContain("order");
   });
 
   it("на прилавке заменяет их одним экраном расчёта", () => {
     // Это не «урезанная касса», а другой набор экранов над тем же API.
-    expect(routesFor(scope({ serviceMode: "counter" }))).toEqual(["counter"]);
+    const counter = scope({ serviceMode: "counter" });
+    expect(workRoutes(counter)).toContain("counter");
+    expect(routesFor(counter)).not.toContain("hall");
+    expect(routesFor(counter)).not.toContain("order");
+  });
+
+  it("доставка от режима обслуживания не зависит", () => {
+    // Совпадение «прилавок = доставка» соблазнительно, но ложно: доставка
+    // бывает и у ресторана с залом, а у шаурмечной её может не быть вовсе.
+    expect(workRoutes(scope())).toContain("delivery");
+    expect(workRoutes(scope({ serviceMode: "counter" }))).toContain("delivery");
   });
 });
 
 describe("тип терминала", () => {
   it("кухонный монитор не показывает зал", () => {
-    const routes = routesFor(
-      scope({ kind: "kds", permissions: permissionsOf("cook") }),
+    expect(workRoutes(scope({ kind: "kds", permissions: permissionsOf("cook") }))).toEqual(
+      ["kitchen"],
     );
-    expect(routes).toEqual(["kitchen"]);
   });
 
   it("админский терминал совмещает зал и кухню", () => {
@@ -61,13 +89,13 @@ describe("тип терминала", () => {
 });
 
 describe("право сотрудника", () => {
-  it("повару на кассе не остаётся ни одного экрана", () => {
+  it("повару на кассе не остаётся ни одного рабочего экрана", () => {
     // Пустое пересечение — это отказ входа, а не пустой экран.
-    expect(routesFor(scope({ permissions: permissionsOf("cook") }))).toEqual([]);
+    expect(workRoutes(scope({ permissions: permissionsOf("cook") }))).toEqual([]);
   });
 
   it("официанту на кухонном мониторе тоже", () => {
-    expect(routesFor(scope({ kind: "kds" }))).toEqual([]);
+    expect(workRoutes(scope({ kind: "kds" }))).toEqual([]);
   });
 
   it("тех. поддержке доступен только сервисный экран", () => {
@@ -95,37 +123,43 @@ describe("право сотрудника", () => {
 
 describe("тариф", () => {
   it("без оплаченного модуля кухни экрана нет даже у повара", () => {
-    const routes = routesFor(
-      scope({
-        kind: "kds",
-        permissions: permissionsOf("cook"),
-        features: new Set<FeatureCode>(),
-      }),
-    );
-    expect(routes).toEqual([]);
+    expect(
+      workRoutes(
+        scope({
+          kind: "kds",
+          permissions: permissionsOf("cook"),
+          features: new Set<FeatureCode>(),
+        }),
+      ),
+    ).toEqual([]);
   });
 
   it("тариф не отменяет остальных условий", () => {
     // Все модули оплачены, но официант на кухонном мониторе всё равно никто.
-    expect(routesFor(scope({ kind: "kds" }))).toEqual([]);
+    expect(workRoutes(scope({ kind: "kds" }))).toEqual([]);
   });
 });
 
 describe("стартовый экран", () => {
-  it("в зале — схема зала", () => {
-    expect(defaultRouteFor(scope())).toEqual({ name: "hall" });
+  /*
+   * Стартовый экран — хаб: с него видно состояние обеих смен и расходятся
+   * все остальные экраны. Но достаётся он только тому, у кого на терминале
+   * есть работа, — иначе он подменял бы собой отказ входа.
+   */
+  it("в зале — главное меню", () => {
+    expect(defaultRouteFor(scope())).toEqual({ name: "menu" });
   });
 
-  it("на прилавке — экран расчёта", () => {
+  it("на прилавке — тоже главное меню", () => {
     expect(defaultRouteFor(scope({ serviceMode: "counter" }))).toEqual({
-      name: "counter",
+      name: "menu",
     });
   });
 
-  it("на кухне — кухонный экран", () => {
+  it("на кухне — тоже: повар попадает в хаб со своей плиткой кухни", () => {
     expect(
       defaultRouteFor(scope({ kind: "kds", permissions: permissionsOf("cook") })),
-    ).toEqual({ name: "kitchen" });
+    ).toEqual({ name: "menu" });
   });
 
   it("никогда не открывает экран заказа: ему нужен стол", () => {
@@ -134,10 +168,58 @@ describe("стартовый экран", () => {
     expect(defaultRouteFor(scope())).not.toEqual({ name: "order" });
   });
 
-  it("возвращает null, когда экранов нет вовсе", () => {
+  it("возвращает null, когда рабочих экранов нет вовсе", () => {
     // Не ошибка вызывающего, а нормальный ответ: дальше это превращается
-    // в отказ входа.
-    expect(defaultRouteFor(scope({ permissions: permissionsOf("cook") }))).toBeNull();
+    // в отказ входа. Доступные сопутствующие экраны (хаб, личная страница)
+    // этого не отменяют — ради них за терминал не встают.
+    const cookAtTill = scope({ permissions: permissionsOf("cook") });
+    expect(routesFor(cookAtTill).length).toBeGreaterThan(0);
+    expect(defaultRouteFor(cookAtTill)).toBeNull();
+  });
+});
+
+/*
+ * Личная страница доступна всем и везде. Если считать её наравне с рабочими
+ * экранами, пересечение никогда не окажется пустым — и повар у кассы попадёт
+ * внутрь, увидев один экран со своей выработкой. Формально не пустой экран,
+ * фактически та же непонятная ситуация, ради которой отказ входа и вводился.
+ */
+describe("сопутствующие экраны", () => {
+  it("личная страница есть у любой роли сотрудника", () => {
+    for (const role of ["waiter", "cashier", "manager", "cook"] as const) {
+      expect(routesFor(scope({ permissions: permissionsOf(role) }))).toContain(
+        "personal",
+      );
+    }
+  });
+
+  it("у вендорской поддержки её нет: она не сотрудник заведения", () => {
+    expect(
+      routesFor(scope({ permissions: permissionsOf("support") })),
+    ).not.toContain("personal");
+  });
+
+  it("сама по себе не даёт повода пускать за терминал", () => {
+    const cookAtTill = scope({ permissions: permissionsOf("cook") });
+    expect(routesFor(cookAtTill)).toContain("personal");
+    expect(hasWorkOn(cookAtTill)).toBe(false);
+  });
+
+  it("экран оплаты тоже сопутствующий: без заказа он бессмыслен", () => {
+    expect(routesFor(scope())).toContain("payment");
+    expect(workRoutes(scope())).not.toContain("payment");
+    expect(defaultRouteFor(scope())).not.toEqual({ name: "payment" });
+  });
+
+  it("личная страница не становится стартовым экраном", () => {
+    expect(defaultRouteFor(scope())).not.toEqual({ name: "personal" });
+  });
+
+  it("не мешает работе там, где она есть", () => {
+    expect(hasWorkOn(scope())).toBe(true);
+    expect(hasWorkOn(scope({ kind: "kds", permissions: permissionsOf("cook") }))).toBe(
+      true,
+    );
   });
 });
 

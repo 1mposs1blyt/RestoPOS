@@ -13,13 +13,14 @@ import type {
   OrderItem,
   OrderItemStatus,
   Payment,
-  PaymentMethod,
   TableStatus,
   UUID,
 } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
 import { multiplyMoney, sumMoney } from "../lib/money";
+import { findPaymentType } from "../data/payment-types";
 import { findMenuItem } from "./menu";
+import { useShifts } from "./shifts";
 import {
   ACTIVE_STATUSES,
   EMPTY_STATE,
@@ -71,8 +72,11 @@ interface OrdersValue {
     items: OrderItem[];
   }[];
   itemsOfOrder: (orderId: UUID) => OrderItem[];
-  /** Платёж по заказу, если он уже рассчитан. */
-  paymentOfOrder: (orderId: UUID) => Payment | undefined;
+  /**
+   * Строки оплаты заказа. Их может быть несколько (часть картой, часть
+   * наличными) плюс строки возвратов — поэтому список, а не один платёж.
+   */
+  paymentsOfOrder: (orderId: UUID) => Payment[];
   orderTotal: (orderId: UUID) => Money;
   tableStatus: (tableId: UUID) => TableStatus;
   /** Есть ли что отправлять на кухню (позиции в статусе `new`). */
@@ -84,13 +88,71 @@ interface OrdersValue {
   removeItem: (itemId: UUID) => void;
   /** Сторно отправленной позиции: из суммы выпадает, из чека — нет. */
   voidItem: (itemId: UUID) => void;
+  /**
+   * Разделить блюдо на доли. `parts` считает `lib/split-quantity.ts` — там же
+   * решается вопрос остатка, чтобы доли в сумме давали исходное количество.
+   */
+  splitItem: (
+    itemId: UUID,
+    parts: number[],
+    guestNumbers?: (number | null)[],
+  ) => void;
+  /** Приписать позицию гостю или снять привязку (`null`). */
+  setItemGuest: (itemId: UUID, guestNumber: number | null) => void;
+  setGuestCount: (orderId: UUID, guestCount: number) => void;
   setItemStatus: (itemId: UUID, status: OrderItemStatus) => void;
   sendToKitchen: (orderId: UUID) => void;
-  payOrder: (orderId: UUID, method: PaymentMethod) => void;
+  /**
+   * Закрыть чек набором строк оплаты. Строки формирует экран оплаты —
+   * там же, где считается сдача. Сюда они приходят уже готовыми: редьюсер
+   * не должен знать про номиналы купюр и порядок нажатий.
+   */
+  payOrder: (orderId: UUID, drafts: PaymentDraft[]) => void;
+  /** Возврат: встречные строки к уже проведённым платежам. */
+  refundPayments: (paymentIds: UUID[]) => void;
   cancelOrder: (orderId: UUID) => void;
 }
 
+/** Что экран оплаты знает о строке платежа до её записи. */
+export interface PaymentDraft {
+  paymentTypeId: UUID;
+  amount: Money;
+  /** Сколько дал гость наличными — для сдачи. `null` для безналичных. */
+  tendered: Money | null;
+}
+
 const OrdersContext = createContext<OrdersValue | null>(null);
+
+/**
+ * Черновик строки оплаты превращается в платёж.
+ *
+ * Род и название типа копируются в платёж снимком, а не берутся по ссылке
+ * при отрисовке: закрытый чек — финансовый документ, и переименование типа
+ * оплаты через год не должно менять то, что напечатано в прошлогоднем Z-отчёте.
+ */
+function toPayment(
+  draft: PaymentDraft,
+  orderId: UUID,
+  cashShiftId: UUID,
+  staffId: UUID = "unknown",
+): Payment {
+  const type = findPaymentType(draft.paymentTypeId);
+  return {
+    id: newId(),
+    orderId,
+    cashShiftId,
+    paymentTypeId: draft.paymentTypeId,
+    kind: type?.kind ?? "cash",
+    label: type?.label ?? "Неизвестный тип",
+    amount: draft.amount,
+    tipAmount: "0.00",
+    tendered: draft.tendered,
+    staffId,
+    refundOf: null,
+    paidAt: new Date().toISOString(),
+    clientId: newId(),
+  };
+}
 
 export function OrdersProvider({
   venueId,
@@ -104,6 +166,7 @@ export function OrdersProvider({
   waiterId: UUID | null;
   children: ReactNode;
 }) {
+  const { cashShift } = useShifts();
   const [state, dispatch] = useReducer(reducer, undefined, loadOrders);
   const { stations, hasScreenOf } = useStations();
 
@@ -128,9 +191,15 @@ export function OrdersProvider({
     (orderId: UUID): Money =>
       sumMoney(
         itemsOfOrder(orderId)
-          // Сторнированная позиция остаётся в чеке (append-only, инвариант №6),
-          // но из суммы выпадает — иначе гость заплатит за отменённое блюдо.
-          .filter((item) => item.status !== "voided")
+          /*
+           * Обе пометки оставляют позицию в чеке (append-only, инвариант №6),
+           * но выводят её из суммы, по разным причинам:
+           *
+           * `voided` — блюда не будет, платить не за что;
+           * `split`  — блюдо есть, но деньги за него несут его доли, и считать
+           *            оба уровня значит взять с гостя дважды.
+           */
+          .filter((item) => item.status !== "voided" && item.status !== "split")
           .map((item) => {
             const menuItem = findMenuItem(item.menuItemId);
             return menuItem
@@ -239,8 +308,8 @@ export function OrdersProvider({
       counterOrder,
       kitchenTickets,
       itemsOfOrder,
-      paymentOfOrder: (orderId) =>
-        Object.values(state.payments).find(
+      paymentsOfOrder: (orderId) =>
+        Object.values(state.payments).filter(
           (payment) => payment.orderId === orderId,
         ),
       orderTotal,
@@ -254,22 +323,61 @@ export function OrdersProvider({
         dispatch({ type: "item/quantity", itemId, quantity }),
       removeItem: (itemId) => dispatch({ type: "item/remove", itemId }),
       voidItem: (itemId) => dispatch({ type: "item/void", itemId }),
+      splitItem: (itemId, parts, guestNumbers) =>
+        dispatch({
+          type: "item/split",
+          itemId,
+          parts,
+          // Идентификаторы долей выдаём здесь: редьюсер обязан оставаться
+          // чистой функцией, а `crypto.randomUUID` — побочный эффект.
+          ids: parts.map(() => newId()),
+          guestNumbers,
+        }),
+      setItemGuest: (itemId, guestNumber) =>
+        dispatch({ type: "item/guest", itemId, guestNumber }),
+      setGuestCount: (orderId, guestCount) =>
+        dispatch({ type: "order/guests", orderId, guestCount }),
       setItemStatus: (itemId, status) =>
         dispatch({ type: "item/status", itemId, status }),
       sendToKitchen: (orderId) =>
         dispatch({ type: "order/send", orderId, autoReadyStationIds }),
-      payOrder: (orderId, method) =>
+      payOrder: (orderId, drafts) => {
+        // Без открытой кассовой смены чек не к чему привязать: у него не будет
+        // ни номера смены, ни места в Z-отчёте. Экран оплаты до этого места
+        // не доводит, но проверка обязана быть и здесь — это инвариант данных,
+        // а не подсказка интерфейса.
+        if (!cashShift) return;
         dispatch({
           type: "order/pay",
-          payment: {
-            id: newId(),
-            orderId,
-            method,
-            amount: orderTotal(orderId),
-            tipAmount: "0.00",
-            paidAt: new Date().toISOString(),
-          },
-        }),
+          orderId,
+          cashShiftNumber: cashShift.number,
+          payments: drafts.map((draft) => toPayment(draft, orderId, cashShift.id)),
+        });
+      },
+      refundPayments: (paymentIds) => {
+        if (!cashShift) return;
+        const now = new Date().toISOString();
+        dispatch({
+          type: "order/refund",
+          payments: paymentIds.flatMap((paymentId) => {
+            const source = state.payments[paymentId];
+            // Возврат возврата — бессмыслица: встречная строка уже существует.
+            if (!source || source.refundOf !== null) return [];
+            return [
+              {
+                ...source,
+                id: newId(),
+                cashShiftId: cashShift.id,
+                refundOf: source.id,
+                tendered: null,
+                staffId: waiterId ?? source.staffId,
+                paidAt: now,
+                clientId: newId(),
+              },
+            ];
+          }),
+        });
+      },
       cancelOrder: (orderId) => dispatch({ type: "order/cancel", orderId }),
     }),
     [
@@ -283,6 +391,8 @@ export function OrdersProvider({
       openOrder,
       addItem,
       autoReadyStationIds,
+      cashShift,
+      waiterId,
     ],
   );
 

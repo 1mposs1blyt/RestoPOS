@@ -4,7 +4,10 @@ mod printing;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![printing::print_ticket])
+        .invoke_handler(tauri::generate_handler![
+            printing::print_ticket,
+            printing::open_cash_drawer
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

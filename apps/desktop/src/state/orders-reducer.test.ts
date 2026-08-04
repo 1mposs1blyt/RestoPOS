@@ -1,4 +1,4 @@
-import type { Order, OrderItem, UUID } from "@restopos/shared-types";
+import type { Order, OrderItem, Payment, UUID } from "@restopos/shared-types";
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_STATE,
@@ -260,38 +260,368 @@ describe("сторно", () => {
   });
 });
 
+function payment(patch: Partial<Payment> & { id: string }): Payment {
+  return {
+    orderId: "order-1",
+    cashShiftId: "cash-1",
+    paymentTypeId: "pt-cash",
+    kind: "cash",
+    label: "Наличные",
+    amount: "420.00",
+    tipAmount: "0.00",
+    tendered: null,
+    staffId: "staff-1",
+    refundOf: null,
+    paidAt: "2026-08-04T10:30:00.000Z",
+    ...patch,
+  };
+}
+
+describe("деление блюда", () => {
+  const served: OrdersState = {
+    ...withOrder(),
+    items: { "item-1": item({ status: "served" }) },
+  };
+
+  it("исходная позиция остаётся в чеке помеченной", () => {
+    // Append-only (инвариант №6): блюдо приготовлено, стирать его нельзя.
+    const next = reducer(served, {
+      type: "item/split",
+      itemId: "item-1",
+      parts: [0.5, 0.5],
+      ids: ["a", "b"],
+    });
+
+    expect(next.items["item-1"].status).toBe("split");
+    expect(next.items.a.quantity).toBe(0.5);
+    expect(next.items.b.quantity).toBe(0.5);
+  });
+
+  it("доли ссылаются на исходную позицию", () => {
+    const next = reducer(served, {
+      type: "item/split",
+      itemId: "item-1",
+      parts: [0.5, 0.5],
+      ids: ["a", "b"],
+    });
+
+    expect(next.items.a.splitOf).toBe("item-1");
+    expect(next.items.b.splitOf).toBe("item-1");
+  });
+
+  /*
+   * Делят обычно уже поданное блюдо. Доля со статусом `new` уехала бы
+   * на кухню второй раз, и повар приготовил бы полборща заново.
+   */
+  it("доли наследуют статус исходной позиции", () => {
+    const next = reducer(served, {
+      type: "item/split",
+      itemId: "item-1",
+      parts: [0.5, 0.5],
+      ids: ["a", "b"],
+    });
+
+    expect(next.items.a.status).toBe("served");
+    expect(next.items.b.status).toBe("served");
+  });
+
+  it("доли расходятся по гостям", () => {
+    const next = reducer(served, {
+      type: "item/split",
+      itemId: "item-1",
+      parts: [0.5, 0.5],
+      ids: ["a", "b"],
+      guestNumbers: [1, 2],
+    });
+
+    expect(next.items.a.guestNumber).toBe(1);
+    expect(next.items.b.guestNumber).toBe(2);
+  });
+
+  /*
+   * Делят еду, а не заказ. Неприготовленная позиция уехала бы на станцию
+   * двумя строками по 0,5, и повар не понял бы, что готовить полпорции.
+   */
+  it.each(["new", "cooking", "voided", "split"] as const)(
+    "не делится позиция в статусе %s",
+    (status) => {
+      const state: OrdersState = {
+        ...withOrder(),
+        items: { "item-1": item({ status }) },
+      };
+
+      expect(
+        reducer(state, {
+          type: "item/split",
+          itemId: "item-1",
+          parts: [0.5, 0.5],
+          ids: ["a", "b"],
+        }),
+      ).toBe(state);
+    },
+  );
+
+  it("готовое блюдо делится", () => {
+    const ready: OrdersState = {
+      ...withOrder(),
+      items: { "item-1": item({ status: "ready" }) },
+    };
+
+    const next = reducer(ready, {
+      type: "item/split",
+      itemId: "item-1",
+      parts: [0.5, 0.5],
+      ids: ["a", "b"],
+    });
+
+    expect(next.items["item-1"].status).toBe("split");
+  });
+
+  it("деление на одну часть — не деление", () => {
+    expect(
+      reducer(served, {
+        type: "item/split",
+        itemId: "item-1",
+        parts: [1],
+        ids: ["a"],
+      }),
+    ).toBe(served);
+  });
+
+  it("нехватка идентификаторов не теряет часть блюда молча", () => {
+    expect(
+      reducer(served, {
+        type: "item/split",
+        itemId: "item-1",
+        parts: [0.5, 0.5],
+        ids: ["a"],
+      }),
+    ).toBe(served);
+  });
+});
+
+describe("гости заказа", () => {
+  it("позиция приписывается гостю и снимается с него", () => {
+    const state: OrdersState = {
+      ...withOrder(),
+      items: { "item-1": item() },
+    };
+
+    const assigned = reducer(state, {
+      type: "item/guest",
+      itemId: "item-1",
+      guestNumber: 2,
+    });
+    expect(assigned.items["item-1"].guestNumber).toBe(2);
+
+    const cleared = reducer(assigned, {
+      type: "item/guest",
+      itemId: "item-1",
+      guestNumber: null,
+    });
+    expect(cleared.items["item-1"].guestNumber).toBeNull();
+  });
+
+  it("число гостей записывается в заказ", () => {
+    const next = reducer(withOrder(), {
+      type: "order/guests",
+      orderId: "order-1",
+      guestCount: 4,
+    });
+
+    expect(next.orders["order-1"].guestCount).toBe(4);
+  });
+
+  it("нулевое число гостей за занятым столом не принимается", () => {
+    const state = withOrder();
+    expect(
+      reducer(state, { type: "order/guests", orderId: "order-1", guestCount: 0 }),
+    ).toBe(state);
+  });
+});
+
 describe("оплата", () => {
   it("сохраняет платёж и закрывает заказ", () => {
-    const state = withOrder();
-    const next = reducer(state, {
+    const next = reducer(withOrder(), {
       type: "order/pay",
-      payment: {
-        id: "payment-1",
-        orderId: "order-1",
-        method: "cash",
-        amount: "420.00",
-        tipAmount: "0.00",
-        paidAt: "2026-08-04T10:30:00.000Z",
-      },
+      orderId: "order-1",
+      cashShiftNumber: 7,
+      payments: [payment({ id: "payment-1" })],
     });
+
     expect(next.orders["order-1"].status).toBe("paid");
     expect(next.payments["payment-1"].amount).toBe("420.00");
+  });
+
+  it("проставляет заказу номер смены и номер чека", () => {
+    const next = reducer(withOrder(), {
+      type: "order/pay",
+      orderId: "order-1",
+      cashShiftNumber: 7,
+      payments: [payment({ id: "payment-1" })],
+    });
+
+    expect(next.orders["order-1"].cashShiftNumber).toBe(7);
+    expect(next.orders["order-1"].receiptNumber).toBe(1);
+  });
+
+  it("закрывает чек набором строк целиком", () => {
+    // «Оплачен наполовину» — состояние, которого у чека не бывает.
+    const next = reducer(withOrder(), {
+      type: "order/pay",
+      orderId: "order-1",
+      cashShiftNumber: 1,
+      payments: [
+        payment({ id: "p-card", kind: "card", label: "Карты", amount: "300.00" }),
+        payment({ id: "p-cash", amount: "120.00" }),
+      ],
+    });
+
+    expect(Object.keys(next.payments)).toHaveLength(2);
+    expect(next.orders["order-1"].status).toBe("paid");
+  });
+
+  /*
+   * Двойное касание по «Оплатить» на сенсорном экране снаружи неотличимо
+   * от первого нажатия, а результат — второе списание с гостя.
+   */
+  it("не проводит оплату дважды по уже закрытому чеку", () => {
+    const paid = reducer(withOrder(), {
+      type: "order/pay",
+      orderId: "order-1",
+      cashShiftNumber: 1,
+      payments: [payment({ id: "payment-1" })],
+    });
+    const again = reducer(paid, {
+      type: "order/pay",
+      orderId: "order-1",
+      cashShiftNumber: 1,
+      payments: [payment({ id: "payment-2" })],
+    });
+
+    expect(again).toBe(paid);
+    expect(Object.keys(again.payments)).toEqual(["payment-1"]);
   });
 
   it("не создаёт платёж без заказа", () => {
     expect(
       reducer(EMPTY_STATE, {
         type: "order/pay",
-        payment: {
-          id: "payment-1",
-          orderId: "нет-такого",
-          method: "cash",
-          amount: "420.00",
-          tipAmount: "0.00",
-          paidAt: "2026-08-04T10:30:00.000Z",
-        },
+        orderId: "нет-такого",
+        cashShiftNumber: 1,
+        payments: [payment({ id: "payment-1", orderId: "нет-такого" })],
       }),
     ).toBe(EMPTY_STATE);
+  });
+
+  it("пустой набор строк чек не закрывает", () => {
+    const state = withOrder();
+    expect(
+      reducer(state, {
+        type: "order/pay",
+        orderId: "order-1",
+        cashShiftNumber: 1,
+        payments: [],
+      }),
+    ).toBe(state);
+  });
+});
+
+describe("возврат", () => {
+  const paid = reducer(withOrder(), {
+    type: "order/pay",
+    orderId: "order-1",
+    cashShiftNumber: 1,
+    payments: [payment({ id: "payment-1" })],
+  });
+
+  /*
+   * Инвариант №6: `payments` иммутабельны. Возврат — встречная строка,
+   * а не правка исходной: LWW на платеже означает потерянную выручку.
+   */
+  it("добавляет встречную строку, не трогая исходную", () => {
+    const next = reducer(paid, {
+      type: "order/refund",
+      payments: [payment({ id: "refund-1", refundOf: "payment-1" })],
+    });
+
+    expect(next.payments["payment-1"].refundOf).toBeNull();
+    expect(next.payments["refund-1"].refundOf).toBe("payment-1");
+  });
+
+  it("не меняет статус заказа: чек был закрыт и остаётся закрытым", () => {
+    const next = reducer(paid, {
+      type: "order/refund",
+      payments: [payment({ id: "refund-1", refundOf: "payment-1" })],
+    });
+
+    expect(next.orders["order-1"].status).toBe("paid");
+  });
+
+  it("повтор с тем же идентификатором не задваивает возврат", () => {
+    const once = reducer(paid, {
+      type: "order/refund",
+      payments: [payment({ id: "refund-1", refundOf: "payment-1" })],
+    });
+    const twice = reducer(once, {
+      type: "order/refund",
+      payments: [payment({ id: "refund-1", refundOf: "payment-1" })],
+    });
+
+    expect(Object.keys(twice.payments)).toHaveLength(2);
+  });
+});
+
+describe("нумерация чеков", () => {
+  it("сквозная внутри смены и не переиспользуется", () => {
+    let state: OrdersState = {
+      ...withOrder(),
+      orders: {
+        "order-1": order({ id: "order-1" }),
+        "order-2": order({ id: "order-2" }),
+      },
+    };
+
+    state = reducer(state, {
+      type: "order/pay",
+      orderId: "order-1",
+      cashShiftNumber: 3,
+      payments: [payment({ id: "p1" })],
+    });
+    state = reducer(state, {
+      type: "order/pay",
+      orderId: "order-2",
+      cashShiftNumber: 3,
+      payments: [payment({ id: "p2", orderId: "order-2" })],
+    });
+
+    expect(state.orders["order-1"].receiptNumber).toBe(1);
+    expect(state.orders["order-2"].receiptNumber).toBe(2);
+  });
+
+  it("в новой смене начинается заново", () => {
+    let state: OrdersState = {
+      ...withOrder(),
+      orders: {
+        "order-1": order({ id: "order-1" }),
+        "order-2": order({ id: "order-2" }),
+      },
+    };
+
+    state = reducer(state, {
+      type: "order/pay",
+      orderId: "order-1",
+      cashShiftNumber: 3,
+      payments: [payment({ id: "p1" })],
+    });
+    state = reducer(state, {
+      type: "order/pay",
+      orderId: "order-2",
+      cashShiftNumber: 4,
+      payments: [payment({ id: "p2", orderId: "order-2" })],
+    });
+
+    expect(state.orders["order-2"].receiptNumber).toBe(1);
   });
 });
 
