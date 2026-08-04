@@ -522,6 +522,66 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_client_id
 CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_one_refund
     ON payments(refund_of) WHERE refund_of IS NOT NULL;
 
+-- ── Скидки и надбавки ───────────────────────────────────────────────────────
+--
+-- Надбавка — **отдельный род, а не отрицательная скидка**. Сведя их в одно
+-- знаковое поле, мы сэкономили бы колонку и потеряли отчёт «036 Скидки
+-- и надбавки»: скидка это потеря выручки, надбавка (обслуживание, доставка) —
+-- её источник, и в сумме они могут дать ноль. Одной колонкой это выглядело бы
+-- как «ничего не было».
+
+CREATE TABLE IF NOT EXISTS discount_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    venue_id UUID NOT NULL REFERENCES venues(id),
+    label TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('discount', 'surcharge')),
+    mode TEXT NOT NULL CHECK (mode IN ('percent', 'amount')),
+    -- Проценты (10 = 10%) либо сумма — по `mode`.
+    value NUMERIC(10,2) NOT NULL CHECK (value >= 0),
+    /*
+     * Требует подтверждения чужим PIN. Право `order.discount` побиваемое,
+     * и градация нужна: гостевые 5–10% кассир даёт сам, 30% на персонал —
+     * с подтверждением. Иначе право либо блокирует обычную работу, либо
+     * не защищает ни от чего.
+     */
+    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INT NOT NULL DEFAULT 0,
+    revision BIGINT NOT NULL DEFAULT nextval('revision_seq'),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_discount_types_venue ON discount_types(venue_id);
+
+-- Применённая к заказу скидка.
+--
+-- `label`, `mode`, `value` и рассчитанный `amount` — снимки, по той же причине,
+-- что у платежа: закрытый чек это финансовый документ, и правка справочника
+-- через год не должна менять прошлогодний отчёт. Пересчитывать процент при
+-- каждом показе тоже нельзя — состав чека мог измениться после применения.
+CREATE TABLE IF NOT EXISTS order_discounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID NOT NULL REFERENCES orders(id),
+    -- NULL — скидка введена вручную, минуя справочник.
+    discount_type_id UUID REFERENCES discount_types(id),
+    kind TEXT NOT NULL CHECK (kind IN ('discount', 'surcharge')),
+    mode TEXT NOT NULL CHECK (mode IN ('percent', 'amount')),
+    label TEXT NOT NULL,
+    value NUMERIC(10,2) NOT NULL,
+    amount money_amount NOT NULL CHECK (amount >= 0),
+    -- Позиция, если скидка на одно блюдо. NULL — на весь заказ.
+    order_item_id UUID REFERENCES order_items(id),
+    staff_id UUID NOT NULL REFERENCES staff(id),
+    -- Кто подтвердил, если скидка требовала подтверждения.
+    approved_by UUID REFERENCES staff(id),
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    client_id TEXT,
+    revision BIGINT NOT NULL DEFAULT nextval('revision_seq'),
+    last_modify_node UUID
+);
+CREATE INDEX IF NOT EXISTS idx_order_discounts_order ON order_discounts(order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_order_discounts_client_id
+    ON order_discounts(client_id) WHERE client_id IS NOT NULL;
+
 -- ── Гости и доставка ────────────────────────────────────────────────────────
 
 -- Постоянные гости. Не путать с гостями заказа: те безымянны и различаются
@@ -747,6 +807,7 @@ BEGIN
         'venues', 'terminals', 'staff', 'prep_stations', 'station_outputs',
         'menu_categories', 'menu_items', 'modifiers', 'stop_list', 'tables',
         'orders', 'order_items', 'payments', 'payment_types',
+        'discount_types', 'order_discounts',
         'cash_shifts', 'staff_shifts', 'cash_operations',
         'guests', 'deliveries', 'warehouse_items', 'warehouse_movements',
         'audit_log', 'custom_field_defs'
