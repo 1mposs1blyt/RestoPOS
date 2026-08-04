@@ -28,7 +28,11 @@ public class RoutesService : IRoutesService
         new("stoplist", "stoplistscreen", "menu.stoplist", ["pos", "kds", "admin"], IsAuxiliary: true),
         new("guests", "guestsscreen", "guest.manage", ["pos", "admin"], IsAuxiliary: true),
         new("documents", "documentsscreen", "document.view", ["pos", "admin"], IsAuxiliary: true),
-        new("service", "servicescreen", "terminal.service", ["pos", "kds", "admin"], IsAuxiliary: true),
+        new("devices", "devicesscreen", "terminal.service", ["pos", "kds", "admin"], IsAuxiliary: true),
+        // Сервисный экран — рабочий, а не сопутствующий: у роли `support` право
+        // ровно одно, и пометка «сопутствующий» означала бы, что вендорского
+        // инженера узел не пускает на терминал вовсе.
+        new("service", "servicescreen", "terminal.service", ["pos", "kds", "admin"], IsAuxiliary: false),
     };
 
     public List<string> GetAvailableRoutes(List<string> permissions, string terminalKind)

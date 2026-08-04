@@ -8,11 +8,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 React фронтенда (`desktop`, `mobile`), в `packages/` — три пакета.
 `apps/backend` — **не воркспейс**: там лежит один файл `schema.sql`.
 
-**Сервера в репозитории нет.** Черновик на Fastify удалён (коммит «удаление
-TS сервера»): узел пишется на C#/C++, и держать TypeScript-заглушку значило бы
-поддерживать код, который выбросят. От бэкенда осталась только каноническая
-схема — `apps/backend/schema.sql`, PostgreSQL, 37 таблиц, проверена на 16-й
-версии. Команды `pnpm dev:backend` больше нет.
+**Сервер в репозитории есть — на C#** (`apps/backend/server`, ASP.NET Core
+net8.0 + Dapper + Npgsql, слушает `http://localhost:5153`). Черновик на Fastify
+удалён (коммит «удаление TS сервера»): узел пишется на C#/C++, и держать
+TypeScript-заглушку значило бы поддерживать код, который выбросят. Команды
+`pnpm dev:backend` нет, узел собирается и запускается своим `dotnet`
+(воркспейсом pnpm он не является). Каноническая схема — `apps/backend/schema.sql`,
+PostgreSQL, 37 таблиц, проверена на 16-й версии.
+
+**Терминал ходит в узел, если задан `VITE_NODE_URL`** (`apps/desktop/.env.local`,
+в git не попадает). Тогда сотрудник, его права и тариф приезжают **с узла**,
+а демо-пины (1111/2222/3333/4444/9999) и матрица прав на фронте не участвуют
+вовсе. Симптом «у роли пропало право, хотя в контракте оно есть» надо искать
+в узле, а не в `packages/shared-types`.
 
 Линтер и тесты есть: Biome, Vitest, общий гейт `pnpm verify`. Плюс свои тесты
 у Rust-части кассы (`src-tauri`, печать марок) — команда ниже.
@@ -123,10 +131,15 @@ Path-алиасы живут в `tsconfig.base.json`, от которого на
 на C#/C++ и импортировать TypeScript не может. Отсюда порядок работы:
 
 - правится **только** `contracts/contract.json`;
-- `packages/shared-types/src/contract.generated.ts` — генерируемый файл,
-  руками не трогать: `pnpm contracts:build`;
+- `packages/shared-types/src/contract.generated.ts` и
+  `apps/backend/server/Contract.generated.cs` — генерируемые файлы, руками
+  не трогать: `pnpm contracts:build` пишет оба сразу;
 - `pnpm contracts:check` встроен в `pnpm verify`, так что отставший
   сгенерированный файл роняет проверку;
+- узел обязан спрашивать права через `Contract.PermissionsOf` /
+  `Contract.CanApprove`, а не своим списком. Рукописная копия там уже была:
+  у менеджера не оказалось `hall.layout.edit`, и конструктор зала исчезал
+  с экрана ровно в тот момент, когда касса подключалась к узлу;
 - `access.ts` держит только производные типы и хелперы. Тип `RolesMatchContract`
   в нём — компиляционная проверка, что `StaffRole` и роли контракта совпадают:
   разъедутся — перестанет собираться.

@@ -8,6 +8,17 @@ dist-ssr/
 build/
 *.tsbuildinfo
 
+# .net (узел заведения, apps/backend/server)
+# Выдача сборки и локальное состояние Visual Studio. Они уже были в индексе,
+# и каждый `dotnet build` показывал полтора десятка изменённых бинарников —
+# в таком diff'е правку в Program.cs не разглядеть. `.suo` и базы CopilotIndices
+# вдобавок машинные: у второго разработчика они конфликтуют при каждом слиянии.
+bin/
+obj/
+.vs/
+*.user
+*.Backup.tmp
+
 # rust / tauri
 target/
 apps/*/src-tauri/target/
