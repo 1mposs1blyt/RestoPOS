@@ -25,4 +25,13 @@ public record StaffShiftDto(Guid Id, DateTime ClockIn);
 
 public record OverrideResponseDto(string TemporaryToken, int ExpiresInSeconds = 60);
 
-
+public record ContextRowDto(
+    Guid TerminalId,
+    string TerminalKind,
+    string TerminalLabel,
+    Guid VenueId,
+    string VenueName,
+    string VenueServiceMode,
+    string PlanCode,
+    string PlanName
+);

@@ -107,15 +107,4 @@ public class AuthRepository : IAuthRepository
         _ => ["staff.self"]
     };
 
-    private class ContextRowDto
-    {
-        public Guid TerminalId { get; set; }
-        public string TerminalKind { get; set; } = string.Empty;
-        public string TerminalLabel { get; set; } = string.Empty;
-        public Guid VenueId { get; set; }
-        public string VenueName { get; set; } = string.Empty;
-        public string VenueServiceMode { get; set; } = string.Empty;
-        public string PlanCode { get; set; } = string.Empty;
-        public string PlanName { get; set; } = string.Empty;
-    }
 }

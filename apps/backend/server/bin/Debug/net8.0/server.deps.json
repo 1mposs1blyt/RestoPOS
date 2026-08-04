@@ -26,6 +26,9 @@
         }
       },
       "dbup-core/6.1.1": {
+        "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.0"
+        },
         "runtime": {
           "lib/netstandard2.0/dbup-core.dll": {
             "assemblyVersion": "6.1.1.0",
@@ -45,6 +48,13 @@
           }
         }
       },
+      "Microsoft.Extensions.ApiDescription.Server/6.0.5": {},
+      "Microsoft.Extensions.DependencyInjection.Abstractions/8.0.0": {},
+      "Microsoft.Extensions.Logging.Abstractions/8.0.0": {
+        "dependencies": {
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "8.0.0"
+        }
+      },
       "Microsoft.OpenApi/1.6.14": {
         "runtime": {
           "lib/netstandard2.0/Microsoft.OpenApi.dll": {
@@ -55,6 +65,7 @@
       },
       "Npgsql/10.0.3": {
         "dependencies": {
+          "Microsoft.Extensions.Logging.Abstractions": "8.0.0",
           "System.Diagnostics.DiagnosticSource": "9.0.11"
         },
         "runtime": {
@@ -66,6 +77,7 @@
       },
       "Swashbuckle.AspNetCore/6.6.2": {
         "dependencies": {
+          "Microsoft.Extensions.ApiDescription.Server": "6.0.5",
           "Swashbuckle.AspNetCore.Swagger": "6.6.2",
           "Swashbuckle.AspNetCore.SwaggerGen": "6.6.2",
           "Swashbuckle.AspNetCore.SwaggerUI": "6.6.2"
@@ -137,6 +149,27 @@
       "sha512": "sha512-mRnmENWWPuuMZ538gOd1mZnzucx6FQk0anmw3EABjGfcbp24FDb9QdGepYrDiaM8K9s5/gd49+5cmBOlniH/lg==",
       "path": "dbup-postgresql/7.0.1",
       "hashPath": "dbup-postgresql.7.0.1.nupkg.sha512"
+    },
+    "Microsoft.Extensions.ApiDescription.Server/6.0.5": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Ckb5EDBUNJdFWyajfXzUIMRkhf52fHZOQuuZg/oiu8y7zDCVwD0iHhew6MnThjHmevanpxL3f5ci2TtHQEN6bw==",
+      "path": "microsoft.extensions.apidescription.server/6.0.5",
+      "hashPath": "microsoft.extensions.apidescription.server.6.0.5.nupkg.sha512"
+    },
+    "Microsoft.Extensions.DependencyInjection.Abstractions/8.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-cjWrLkJXK0rs4zofsK4bSdg+jhDLTaxrkXu4gS6Y7MAlCvRyNNgwY/lJi5RDlQOnSZweHqoyvgvbdvQsRIW+hg==",
+      "path": "microsoft.extensions.dependencyinjection.abstractions/8.0.0",
+      "hashPath": "microsoft.extensions.dependencyinjection.abstractions.8.0.0.nupkg.sha512"
+    },
+    "Microsoft.Extensions.Logging.Abstractions/8.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-arDBqTgFCyS0EvRV7O3MZturChstm50OJ0y9bDJvAcmEPJm0FFpFyjU/JLYyStNGGey081DvnQYlncNX5SJJGA==",
+      "path": "microsoft.extensions.logging.abstractions/8.0.0",
+      "hashPath": "microsoft.extensions.logging.abstractions.8.0.0.nupkg.sha512"
     },
     "Microsoft.OpenApi/1.6.14": {
       "type": "package",

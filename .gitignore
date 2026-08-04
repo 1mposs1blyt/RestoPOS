@@ -45,3 +45,9 @@ Pods/
 *.log
 npm-debug.log*
 pnpm-debug.log*
+
+
+.vs/
+*.user
+bin/
+obj/

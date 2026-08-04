@@ -3,8 +3,12 @@
   "WorkspaceRootPath": "D:\\RestoPOS\\apps\\backend\\server\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\data\\dbinit.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:data\\dbinit.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\repos\\authrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:repos\\authrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\repos\\iauthrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:repos\\iauthrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\dtos\\authdto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -15,8 +19,12 @@
       "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\repos\\authrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:repos\\authrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\dtos\\tabledto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:dtos\\tabledto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\data\\dbinit.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:data\\dbinit.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
@@ -29,10 +37,6 @@
     {
       "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\server.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|",
       "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:server.csproj||{04B8AB82-A572-4FEF-95CE-5222444B6B64}|"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\repos\\iauthrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|solutionrelative:repos\\iauthrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{3D5D546C-D654-4980-8DC5-B9CBDA544089}|server.csproj|d:\\restopos\\apps\\backend\\server\\appsettings.development.json||{90A6B3A7-C1A3-4009-A288-E2FF89E96FA0}",
@@ -54,7 +58,7 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 11,
+          "SelectedChildIndex": 7,
           "Children": [
             {
               "$type": "Bookmark",
@@ -62,7 +66,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 10,
+              "DocumentIndex": 4,
+              "Title": "tableDTO.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\DTOS\\tableDTO.cs",
+              "RelativeDocumentMoniker": "DTOS\\tableDTO.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\DTOS\\tableDTO.cs",
+              "RelativeToolTip": "DTOS\\tableDTO.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAwAAAACAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-04T19:17:39.184Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 11,
               "Title": "RoutesService.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Services\\RoutesService.cs",
               "RelativeDocumentMoniker": "Services\\RoutesService.cs",
@@ -70,12 +87,11 @@
               "RelativeToolTip": "Services\\RoutesService.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAC0AAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T16:04:20.28Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:04:20.28Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 9,
+              "DocumentIndex": 10,
               "Title": "SessionController.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\SessionController.cs",
               "RelativeDocumentMoniker": "Controllers\\SessionController.cs",
@@ -87,7 +103,7 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 6,
               "Title": "AuthController.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\AuthController.cs",
               "RelativeDocumentMoniker": "Controllers\\AuthController.cs",
@@ -95,12 +111,11 @@
               "RelativeToolTip": "Controllers\\AuthController.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAEYAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T16:02:51.67Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:02:51.67Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 5,
+              "DocumentIndex": 7,
               "Title": "server.csproj",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\server.csproj",
               "RelativeDocumentMoniker": "server.csproj",
@@ -108,37 +123,35 @@
               "RelativeToolTip": "server.csproj",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-08-04T16:00:27.067Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:00:27.067Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 6,
+              "DocumentIndex": 8,
               "Title": "server",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\server.csproj",
               "RelativeDocumentMoniker": "server.csproj",
               "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\server.csproj",
               "RelativeToolTip": "server.csproj",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-08-04T16:00:23.588Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:00:23.588Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 0,
               "Title": "AuthRepository.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\repos\\AuthRepository.cs",
               "RelativeDocumentMoniker": "repos\\AuthRepository.cs",
               "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\repos\\AuthRepository.cs",
               "RelativeToolTip": "repos\\AuthRepository.cs",
-              "ViewState": "AgIAAGkAAAAAAAAAAAAmwGsAAAAGAAAAAAAAAA==",
+              "ViewState": "AgIAAFsAAAAAAAAAAAAkwGwAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-08-04T15:59:44.6Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 7,
+              "DocumentIndex": 1,
               "Title": "IAuthRepository.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\repos\\IAuthRepository.cs",
               "RelativeDocumentMoniker": "repos\\IAuthRepository.cs",
@@ -151,20 +164,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 2,
               "Title": "authDTO.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\DTOS\\authDTO.cs",
               "RelativeDocumentMoniker": "DTOS\\authDTO.cs",
               "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\DTOS\\authDTO.cs",
               "RelativeToolTip": "DTOS\\authDTO.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAoAAAAAAAAAAAAIwBsAAAAcAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-08-04T15:53:42.828Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 8,
+              "DocumentIndex": 9,
               "Title": "appsettings.Development.json",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\appsettings.Development.json",
               "RelativeDocumentMoniker": "appsettings.Development.json",
@@ -172,12 +185,11 @@
               "RelativeToolTip": "appsettings.Development.json",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAyAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2026-08-04T14:40:03.658Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T14:40:03.658Z"
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 3,
               "Title": "Program.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Program.cs",
               "RelativeDocumentMoniker": "Program.cs",
@@ -190,13 +202,13 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 5,
               "Title": "dbInit.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Data\\dbInit.cs",
               "RelativeDocumentMoniker": "Data\\dbInit.cs",
               "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Data\\dbInit.cs",
               "RelativeToolTip": "Data\\dbInit.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAA1AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-08-04T14:34:13.069Z",
               "EditorCaption": ""

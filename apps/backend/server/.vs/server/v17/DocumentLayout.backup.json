@@ -70,8 +70,7 @@
               "RelativeToolTip": "Services\\RoutesService.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAC0AAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T16:04:20.28Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:04:20.28Z"
             },
             {
               "$type": "Document",
@@ -95,8 +94,7 @@
               "RelativeToolTip": "Controllers\\AuthController.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAEYAAAABAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T16:02:51.67Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:02:51.67Z"
             },
             {
               "$type": "Document",
@@ -108,8 +106,7 @@
               "RelativeToolTip": "server.csproj",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAABEAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-08-04T16:00:27.067Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:00:27.067Z"
             },
             {
               "$type": "Document",
@@ -120,8 +117,7 @@
               "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\server.csproj",
               "RelativeToolTip": "server.csproj",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000758|",
-              "WhenOpened": "2026-08-04T16:00:23.588Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T16:00:23.588Z"
             },
             {
               "$type": "Document",
@@ -133,8 +129,7 @@
               "RelativeToolTip": "repos\\AuthRepository.cs",
               "ViewState": "AgIAAGkAAAAAAAAAAAAmwGsAAAAGAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T15:59:44.6Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T15:59:44.6Z"
             },
             {
               "$type": "Document",
@@ -146,8 +141,7 @@
               "RelativeToolTip": "repos\\IAuthRepository.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAkAAAA0AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T15:59:30.309Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T15:59:30.309Z"
             },
             {
               "$type": "Document",
@@ -159,8 +153,7 @@
               "RelativeToolTip": "DTOS\\authDTO.cs",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAABwAAAAAAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T15:53:42.828Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T15:53:42.828Z"
             },
             {
               "$type": "Document",
@@ -172,8 +165,7 @@
               "RelativeToolTip": "appsettings.Development.json",
               "ViewState": "AgIAAAAAAAAAAAAAAAAAAAgAAAAyAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001642|",
-              "WhenOpened": "2026-08-04T14:40:03.658Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T14:40:03.658Z"
             },
             {
               "$type": "Document",
@@ -185,8 +177,7 @@
               "RelativeToolTip": "Program.cs",
               "ViewState": "AgIAAAwAAAAAAAAAAAAAAB4AAAAaAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
-              "WhenOpened": "2026-08-04T14:31:48.631Z",
-              "EditorCaption": ""
+              "WhenOpened": "2026-08-04T14:31:48.631Z"
             },
             {
               "$type": "Document",
@@ -196,7 +187,7 @@
               "RelativeDocumentMoniker": "Data\\dbInit.cs",
               "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Data\\dbInit.cs",
               "RelativeToolTip": "Data\\dbInit.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB4AAAAAAAAAAAAAAA==",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAABAAAAA1AAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-08-04T14:34:13.069Z",
               "EditorCaption": ""
