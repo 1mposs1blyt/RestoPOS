@@ -120,7 +120,7 @@ export function MainMenuScreen({ scope }: { scope: AccessScope }) {
   const { can } = useAccess();
   const { navigate } = useNavigation();
   const { staff, venue } = useSession();
-  const { cashShift, myShift } = useShifts();
+  const { cashShift, myShift, tracksAttendance, openMyShift } = useShifts();
 
   const available = new Set(routesFor(scope));
 
@@ -155,9 +155,19 @@ export function MainMenuScreen({ scope }: { scope: AccessScope }) {
             ["Роль", staff ? roleLabel(staff.role) : "—"],
             [
               "Личная смена",
-              myShift ? `открыта ${formatTime(myShift.openedAt)}` : "закрыта",
+              myShift ? `открыта ${formatTime(myShift.openedAt)}` : "не открыта",
             ],
           ]}
+          /*
+           * Пока смена не открыта, кнопка стоит прямо в карточке сотрудника:
+           * это первое, что делают, приходя на работу, и искать её в разделах
+           * не должно быть нужно.
+           */
+          action={
+            tracksAttendance && !myShift
+              ? { label: "Открыть смену", onClick: openMyShift }
+              : undefined
+          }
         />
         <StatusCard
           title="Касса"
@@ -228,10 +238,13 @@ function StatusCard({
   title,
   tone,
   rows,
+  action,
 }: {
   title: string;
   tone: string;
   rows: [string, string][];
+  /** Действие прямо в карточке — когда без него состояние не сдвинуть. */
+  action?: { label: string; onClick: () => void };
 }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-700/50">
@@ -253,6 +266,15 @@ function StatusCard({
           </div>
         ))}
       </dl>
+      {action && (
+        <button
+          type="button"
+          onClick={action.onClick}
+          className="min-h-14 w-full bg-emerald-600 text-sm font-black text-white transition active:bg-emerald-500"
+        >
+          {action.label}
+        </button>
+      )}
     </div>
   );
 }
