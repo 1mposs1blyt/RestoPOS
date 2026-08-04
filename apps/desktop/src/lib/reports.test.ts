@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   CashShift,
   Order,
+  OrderDiscount,
   OrderItem,
   Payment,
   PaymentKind,
@@ -76,8 +77,27 @@ function context(patch: Partial<ReportContext> = {}): ReportContext {
     orders: [],
     items: [],
     payments: [],
+    discounts: [],
     operations: [],
     cashShift: SHIFT,
+    ...patch,
+  };
+}
+
+function discount(
+  patch: Partial<OrderDiscount> & { id: string; amount: string },
+): OrderDiscount {
+  return {
+    orderId: "o1",
+    discountTypeId: "dt-guest-10",
+    kind: "discount",
+    mode: "percent",
+    label: "Гостевая 10%",
+    value: "10",
+    orderItemId: null,
+    staffId: "staff-2",
+    approvedBy: null,
+    appliedAt: "2026-08-04T10:20:00.000Z",
     ...patch,
   };
 }
@@ -245,6 +265,97 @@ describe("046 реестр счетов", () => {
 
     expect(table.rows.map((row) => row.receipt)).toEqual(["1", "2"]);
     expect(table.footer?.amount).toBe("840.00");
+  });
+});
+
+/*
+ * Реальный баг: отчёты по позициям (013, 046) считали выручку по прайсу
+ * и расходились с отчётом по платежам (011) ровно на скидку. Управляющий
+ * при сверке смены видел две разные выручки, и обе выглядели правдоподобно.
+ */
+describe("согласованность отчётов при скидке", () => {
+  // Борщ 420 × 2 = 840, скидка 10% = 84, к оплате 756.
+  const withDiscount = context({
+    orders: [order({ id: "o1" })],
+    items: [item({ id: "i1", quantity: 2 })],
+    discounts: [discount({ id: "d1", amount: "84.00" })],
+    payments: [payment({ id: "p1", kind: "cash", amount: "756.00" })],
+  });
+
+  it("выручка по официантам считается со скидкой", () => {
+    expect(run("013", withDiscount).footer?.amount).toBe("756.00");
+  });
+
+  it("реестр счетов показывает уплаченную сумму, а не по прайсу", () => {
+    expect(run("046", withDiscount).footer?.amount).toBe("756.00");
+  });
+
+  it("все денежные отчёты сходятся между собой", () => {
+    const byPayment = run("011", withDiscount).footer?.amount;
+    const byWaiter = run("013", withDiscount).footer?.amount;
+    const registry = run("046", withDiscount).footer?.amount;
+
+    expect(byWaiter).toBe(byPayment);
+    expect(registry).toBe(byPayment);
+  });
+
+  it("продажи блюд остаются по прайсу — это отчёт про еду, не про деньги", () => {
+    // Здесь скидка не вычитается намеренно: столько блюд ушло с кухни.
+    expect(run("023", withDiscount).footer?.amount).toBe("840.00");
+  });
+});
+
+describe("036 скидки и надбавки", () => {
+  it("разводит скидки и надбавки по разным колонкам", () => {
+    const table = run(
+      "036",
+      context({
+        orders: [order({ id: "o1" })],
+        items: [item({ id: "i1", quantity: 2 })],
+        discounts: [
+          discount({ id: "d1", amount: "84.00" }),
+          discount({
+            id: "d2",
+            amount: "84.00",
+            kind: "surcharge",
+            label: "Обслуживание 10%",
+          }),
+        ],
+        payments: [payment({ id: "p1", kind: "cash", amount: "840.00" })],
+      }),
+    );
+
+    // В сумме ноль, но это две строки, а не «ничего не было».
+    expect(table.footer?.discount).toBe("84.00");
+    expect(table.footer?.surcharge).toBe("84.00");
+    expect(table.rows).toHaveLength(2);
+  });
+
+  it("показывает, кто подтвердил скидку", () => {
+    const table = run(
+      "036",
+      context({
+        orders: [order({ id: "o1" })],
+        items: [item({ id: "i1" })],
+        discounts: [discount({ id: "d1", amount: "42.00", approvedBy: "staff-3" })],
+        payments: [payment({ id: "p1", kind: "cash", amount: "378.00" })],
+      }),
+    );
+
+    expect(table.rows[0].approved).toBe("Мария Дёмина");
+  });
+
+  it("скидка на ещё не оплаченный заказ в отчёт не идёт", () => {
+    const table = run(
+      "036",
+      context({
+        orders: [order({ id: "o1", status: "open" })],
+        items: [item({ id: "i1" })],
+        discounts: [discount({ id: "d1", amount: "42.00" })],
+      }),
+    );
+
+    expect(table.rows).toHaveLength(0);
   });
 });
 

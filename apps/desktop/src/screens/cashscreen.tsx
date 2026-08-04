@@ -8,7 +8,7 @@ import { useShifts } from "../state/shifts";
 import { cashShiftTotals } from "../lib/cash-totals";
 import { formatMoney, fromMinor, ZERO_MONEY } from "../lib/money";
 import { openCashDrawer } from "../lib/printer";
-import { loadReceiptPrinter } from "../state/terminal-settings";
+import { useTerminal } from "../state/terminal";
 
 /**
  * Кассовая смена и денежный ящик.
@@ -27,6 +27,7 @@ export function CashScreen() {
   const { cashShift, openCashShift, closeCashShift, recordCash, state } =
     useShifts();
   const { state: orders } = useOrders();
+  const { receiptPrinter } = useTerminal();
 
   const [dialog, setDialog] = useState<CashOperationKind | null>(null);
   const [floatDraft, setFloatDraft] = useState("5000.00");
@@ -135,7 +136,7 @@ export function CashScreen() {
               label="Открыть денежный ящик"
               disabled={!can("cash.drawer")}
               onClick={() => {
-                const printer = loadReceiptPrinter();
+                const printer = receiptPrinter;
                 if (!printer) {
                   setNotice(
                     "Чековый принтер не настроен — ящик открывается его командой",

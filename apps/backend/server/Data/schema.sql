@@ -135,11 +135,56 @@ CREATE TABLE IF NOT EXISTS terminals (
     -- своего же чекового принтера.
     receipt_printer_host TEXT,
     receipt_printer_port INT,
+
+    /*
+     * Фискальный регистратор.
+     *
+     * Живёт на терминале, а не на узле: ФР подключён к конкретной кассе
+     * по COM-порту физически. Узлу он нужен по двум причинам — Z-отчёт должен
+     * знать, на чём пробит, а вопрос «почему за смену нет фискальных
+     * признаков» задают потом, когда касса уже выключена, и ответить на него
+     * можно только из БД узла.
+     */
+    fiscal_model TEXT CHECK (fiscal_model IN ('atol', 'shtrih', 'virtual')),
+    -- «COM3». У виртуального ФР порта нет.
+    fiscal_port TEXT,
+    fiscal_baud_rate INT,
+    /*
+     * Держит ли касса COM-порт прямо сейчас.
+     *
+     * Порт занимает ровно один процесс: пока его держит касса, утилита
+     * производителя (ДТО Атол, тест Штрих-М) открыть его не сможет — а она
+     * нужна для прошивки, фискализации и диагностики. Отсюда возможность
+     * отпустить порт из сервисного режима.
+     *
+     * Состояние хранится, потому что забывается: отпустили под утилиту,
+     * ушли, а обнаруживает это кассир, когда гость уже стоит с деньгами.
+     */
+    fiscal_is_connected BOOLEAN NOT NULL DEFAULT TRUE,
+    fiscal_released_at TIMESTAMPTZ,
+    -- Отпускает порт вендорский инженер, а он не сотрудник арендатора
+    -- и в `staff` его нет. Ссылка на `service_accounts` навешивается ниже:
+    -- та таблица объявлена после этой.
+    fiscal_released_by UUID,
+
     attributes JSONB NOT NULL DEFAULT '{}',
     revision BIGINT NOT NULL DEFAULT nextval('revision_seq'),
-    deleted BOOLEAN NOT NULL DEFAULT FALSE
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- У виртуального ФР порта не бывает: адрес, который никуда не ведёт,
+    -- потом ищут часами.
+    CONSTRAINT chk_virtual_fiscal_has_no_port
+        CHECK (fiscal_model IS DISTINCT FROM 'virtual' OR fiscal_port IS NULL),
+    -- Отпущенный порт обязан помнить, когда и кем: иначе «почему смена
+    -- не фискализирована» остаётся без ответа.
+    CONSTRAINT chk_released_port_has_trace
+        CHECK (fiscal_is_connected OR fiscal_released_at IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_terminals_venue ON terminals(venue_id);
+-- «Какие кассы сейчас без фискального регистратора» — вопрос дежурный,
+-- и отвечать на него перебором всех терминалов не нужно.
+CREATE INDEX IF NOT EXISTS idx_terminals_fiscal_released
+    ON terminals(venue_id) WHERE NOT fiscal_is_connected;
 
 CREATE TABLE IF NOT EXISTS staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -164,6 +209,13 @@ CREATE TABLE IF NOT EXISTS service_accounts (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Отложенная ссылка: `terminals` объявлены выше, а отпускает COM-порт
+-- фискального регистратора именно вендорский инженер.
+ALTER TABLE terminals DROP CONSTRAINT IF EXISTS fk_terminals_fiscal_released_by;
+ALTER TABLE terminals
+    ADD CONSTRAINT fk_terminals_fiscal_released_by
+    FOREIGN KEY (fiscal_released_by) REFERENCES service_accounts(id);
 
 -- ── Смены: их ТРИ, и они независимы ─────────────────────────────────────────
 --
@@ -522,6 +574,66 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_client_id
 CREATE UNIQUE INDEX IF NOT EXISTS uq_payments_one_refund
     ON payments(refund_of) WHERE refund_of IS NOT NULL;
 
+-- ── Скидки и надбавки ───────────────────────────────────────────────────────
+--
+-- Надбавка — **отдельный род, а не отрицательная скидка**. Сведя их в одно
+-- знаковое поле, мы сэкономили бы колонку и потеряли отчёт «036 Скидки
+-- и надбавки»: скидка это потеря выручки, надбавка (обслуживание, доставка) —
+-- её источник, и в сумме они могут дать ноль. Одной колонкой это выглядело бы
+-- как «ничего не было».
+
+CREATE TABLE IF NOT EXISTS discount_types (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    venue_id UUID NOT NULL REFERENCES venues(id),
+    label TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('discount', 'surcharge')),
+    mode TEXT NOT NULL CHECK (mode IN ('percent', 'amount')),
+    -- Проценты (10 = 10%) либо сумма — по `mode`.
+    value NUMERIC(10,2) NOT NULL CHECK (value >= 0),
+    /*
+     * Требует подтверждения чужим PIN. Право `order.discount` побиваемое,
+     * и градация нужна: гостевые 5–10% кассир даёт сам, 30% на персонал —
+     * с подтверждением. Иначе право либо блокирует обычную работу, либо
+     * не защищает ни от чего.
+     */
+    requires_approval BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INT NOT NULL DEFAULT 0,
+    revision BIGINT NOT NULL DEFAULT nextval('revision_seq'),
+    deleted BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX IF NOT EXISTS idx_discount_types_venue ON discount_types(venue_id);
+
+-- Применённая к заказу скидка.
+--
+-- `label`, `mode`, `value` и рассчитанный `amount` — снимки, по той же причине,
+-- что у платежа: закрытый чек это финансовый документ, и правка справочника
+-- через год не должна менять прошлогодний отчёт. Пересчитывать процент при
+-- каждом показе тоже нельзя — состав чека мог измениться после применения.
+CREATE TABLE IF NOT EXISTS order_discounts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID NOT NULL REFERENCES orders(id),
+    -- NULL — скидка введена вручную, минуя справочник.
+    discount_type_id UUID REFERENCES discount_types(id),
+    kind TEXT NOT NULL CHECK (kind IN ('discount', 'surcharge')),
+    mode TEXT NOT NULL CHECK (mode IN ('percent', 'amount')),
+    label TEXT NOT NULL,
+    value NUMERIC(10,2) NOT NULL,
+    amount money_amount NOT NULL CHECK (amount >= 0),
+    -- Позиция, если скидка на одно блюдо. NULL — на весь заказ.
+    order_item_id UUID REFERENCES order_items(id),
+    staff_id UUID NOT NULL REFERENCES staff(id),
+    -- Кто подтвердил, если скидка требовала подтверждения.
+    approved_by UUID REFERENCES staff(id),
+    applied_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    client_id TEXT,
+    revision BIGINT NOT NULL DEFAULT nextval('revision_seq'),
+    last_modify_node UUID
+);
+CREATE INDEX IF NOT EXISTS idx_order_discounts_order ON order_discounts(order_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_order_discounts_client_id
+    ON order_discounts(client_id) WHERE client_id IS NOT NULL;
+
 -- ── Гости и доставка ────────────────────────────────────────────────────────
 
 -- Постоянные гости. Не путать с гостями заказа: те безымянны и различаются
@@ -747,6 +859,7 @@ BEGIN
         'venues', 'terminals', 'staff', 'prep_stations', 'station_outputs',
         'menu_categories', 'menu_items', 'modifiers', 'stop_list', 'tables',
         'orders', 'order_items', 'payments', 'payment_types',
+        'discount_types', 'order_discounts',
         'cash_shifts', 'staff_shifts', 'cash_operations',
         'guests', 'deliveries', 'warehouse_items', 'warehouse_movements',
         'audit_log', 'custom_field_defs'

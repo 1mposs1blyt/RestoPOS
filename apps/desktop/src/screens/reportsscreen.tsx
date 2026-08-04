@@ -27,6 +27,7 @@ export function ReportsScreen() {
       orders: Object.values(orders.orders),
       items: Object.values(orders.items),
       payments: Object.values(orders.payments),
+      discounts: Object.values(orders.discounts),
       operations: Object.values(shifts.cashOperations),
       cashShift,
     }),
