@@ -4,8 +4,8 @@ import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
 import { useSession } from "../app/session";
 import { clearAll } from "../lib/storage";
-import { useTerminal } from "../state/terminal";
-import type { FiscalModel } from "../state/terminal-settings";
+import { useNavigation } from "../app/navigation";
+import { useDevices } from "../state/devices";
 
 /**
  * Сервисный экран терминала — единственное, что доступно роли `support`.
@@ -72,7 +72,7 @@ export function ServiceScreen() {
           />
         </Section>
 
-        <FiscalDeviceSection />
+        <EquipmentSection />
         <Diagnostics />
         <DangerZone />
       </div>
@@ -81,144 +81,50 @@ export function ServiceScreen() {
 }
 
 /**
- * Фискальный регистратор и его COM-порт.
+ * Настройка оборудования.
  *
- * Главное здесь — кнопка «Отпустить порт». COM-порт держит ровно один процесс,
- * и пока его держит касса, утилита производителя (ДТО Атол, тест Штрих-М)
- * открыть его не сможет — а она нужна для прошивки, фискализации и диагностики.
- * В iiko это то же самое: сервисное меню умеет отключить ФР, чтобы освободить
- * порт под драйвер ККТ.
- *
- * Отпустить — не значит «выключить»: настройка ФР сохраняется, вернуть его
- * одно касание. Но состояние опасное, поэтому отпущенный порт виден на всех
- * экранах кассы, а не только здесь.
+ * Ведёт на отдельный экран «Список устройств» — как в «Инструментах» iiko,
+ * а не блоком здесь. Причина не в подражании: у устройства десяток настроек
+ * и своя карточка с разделами, и втиснуть её в общий сервисный экран рядом
+ * с типом терминала и тарифом значит получить полотно, по которому листают
+ * в поисках нужного.
  */
-function FiscalDeviceSection() {
-  const { staff } = useSession();
-  const { fiscal, releaseFiscalPort, connectFiscalPort, setFiscalDevice } =
-    useTerminal();
+function EquipmentSection() {
+  const { navigate } = useNavigation();
+  const { devices, kkm } = useDevices();
+  const stopped = devices.filter((device) => !device.isRunning);
 
   return (
     <Section
-      title="Фискальный регистратор"
-      hint="COM-порт держит один процесс: отпустите его, чтобы запустить утилиту производителя"
+      title="Настройка оборудования"
+      hint="ККМ, принтеры и весы: подключение, запуск и освобождение портов"
     >
       <div className="w-full space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {FISCAL_MODELS.map((model) => (
-            <button
-              key={model}
-              type="button"
-              onClick={() => setFiscalDevice({ ...fiscal, model })}
-              className={cn(
-                "min-h-11 rounded-lg border px-4 text-sm font-bold transition active:scale-95",
-                fiscal.model === model
-                  ? "border-transparent bg-orange-500 text-white"
-                  : "border-slate-700 bg-slate-800 text-slate-300",
-              )}
-            >
-              {FISCAL_LABELS[model]}
-            </button>
-          ))}
-        </div>
-
-        {/* У виртуального ФР порта нет — и поле ввода там только сбивает. */}
-        {fiscal.model !== "virtual" && (
-          <div className="flex flex-wrap items-end gap-3">
-            <label className="block">
-              <span className="text-xs uppercase tracking-wider text-slate-600">
-                Порт
-              </span>
-              <input
-                value={fiscal.port ?? ""}
-                placeholder="COM3"
-                disabled={!fiscal.isConnected}
-                onChange={(event) =>
-                  setFiscalDevice({ ...fiscal, port: event.target.value })
-                }
-                className="mt-1 min-h-11 w-32 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 disabled:opacity-40"
-              />
-            </label>
-            <label className="block">
-              <span className="text-xs uppercase tracking-wider text-slate-600">
-                Скорость
-              </span>
-              <select
-                value={fiscal.baudRate}
-                disabled={!fiscal.isConnected}
-                onChange={(event) =>
-                  setFiscalDevice({
-                    ...fiscal,
-                    baudRate: Number(event.target.value),
-                  })
-                }
-                className="mt-1 min-h-11 w-32 rounded-lg border border-slate-700 bg-slate-950 px-3 text-sm text-slate-100 disabled:opacity-40"
-              >
-                {[9600, 19200, 38400, 57600, 115200].map((rate) => (
-                  <option key={rate} value={rate}>
-                    {rate}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-        )}
-
-        <div
-          className={cn(
-            "rounded-xl border p-4",
-            fiscal.isConnected
-              ? "border-emerald-900/60 bg-emerald-950/30"
-              : "border-amber-900/60 bg-amber-950/30",
+        <div className="flex flex-wrap gap-4 text-sm">
+          <span className="text-slate-400">
+            Устройств: <b className="text-slate-200">{devices.length}</b>
+          </span>
+          <span className="text-slate-400">
+            ККМ:{" "}
+            <b className="text-slate-200">{kkm ? kkm.model : "не настроена"}</b>
+          </span>
+          {stopped.length > 0 && (
+            <span className="text-amber-400">
+              остановлено: <b>{stopped.length}</b> — порты свободны
+            </span>
           )}
-        >
-          <p className="text-sm font-bold text-slate-200">
-            {fiscal.isConnected
-              ? `Порт занят кассой${fiscal.port ? ` (${fiscal.port})` : ""}`
-              : "Порт отпущен — касса им не пользуется"}
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            {fiscal.isConnected
-              ? "Утилита производителя порт не откроет, пока касса его держит."
-              : `Отпустил ${fiscal.releasedBy ?? "—"}${
-                  fiscal.releasedAt
-                    ? ` в ${new Date(fiscal.releasedAt).toLocaleString("ru-RU")}`
-                    : ""
-                }. Чеки не фискализируются.`}
-          </p>
-          <button
-            type="button"
-            onClick={() =>
-              fiscal.isConnected
-                ? releaseFiscalPort(staff?.fullName ?? "тех. поддержка")
-                : connectFiscalPort()
-            }
-            className={cn(
-              "mt-3 min-h-14 w-full rounded-xl text-sm font-black transition active:scale-95",
-              fiscal.isConnected
-                ? "border border-amber-800 bg-amber-950/60 text-amber-300"
-                : "bg-emerald-600 text-white",
-            )}
-          >
-            {fiscal.isConnected ? "Отпустить порт" : "Занять порт кассой"}
-          </button>
         </div>
-
-        <p className="text-xs text-slate-600">
-          Само удержание порта делает Rust-часть кассы; сейчас она к ФР
-          не подключается, и переключатель меняет только состояние терминала.
-        </p>
+        <button
+          type="button"
+          onClick={() => navigate({ name: "devices" })}
+          className="min-h-14 w-full rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-200 transition active:bg-slate-700"
+        >
+          Открыть список устройств
+        </button>
       </div>
     </Section>
   );
 }
-
-const FISCAL_MODELS: FiscalModel[] = ["atol", "shtrih", "virtual"];
-const FISCAL_LABELS: Record<FiscalModel, string> = {
-  atol: "АТОЛ",
-  shtrih: "Штрих-М",
-  virtual: "Виртуальный ФР",
-};
 
 const TERMINALS: TerminalKind[] = ["pos", "kds", "admin"];
 const TERMINAL_LABELS: Record<TerminalKind, string> = {

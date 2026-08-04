@@ -38,6 +38,7 @@ export type Route =
   | { name: "stoplist" }
   | { name: "guests" }
   | { name: "documents" }
+  | { name: "devices" }
   | { name: "service" };
 
 export type RouteName = Route["name"];
@@ -197,6 +198,13 @@ const ROUTE_SPECS: Record<RouteName, RouteSpec> = {
     terminals: ["pos", "admin"],
     serviceModes: null,
     permission: "document.view",
+    accessory: true,
+  },
+  // Настройка оборудования — часть сервисного режима, под тем же правом.
+  devices: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "terminal.service",
     accessory: true,
   },
   // Сервисный экран доступен на терминале любого типа: чинить приходится и KDS.

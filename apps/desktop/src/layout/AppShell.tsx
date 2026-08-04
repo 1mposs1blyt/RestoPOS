@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
-import { useTerminal } from "../state/terminal";
+import { useDevices } from "../state/devices";
 import {
   useNavigation,
   workRoutesFor,
@@ -27,14 +27,15 @@ const TERMINAL_LABELS: Record<TerminalKind, string> = {
  * и при этом попадаться на глаза при любом действии.
  */
 function FiscalPortBanner() {
-  const { fiscal } = useTerminal();
-  if (fiscal.isConnected) return null;
+  const { kkm } = useDevices();
+  // Предупреждаем только про ККМ: остановленные весы работе кассы не мешают.
+  if (!kkm || kkm.isRunning) return null;
 
   return (
     <div className="shrink-0 border-x border-b border-amber-900/60 bg-amber-950/50 px-5 py-2 text-sm text-amber-300">
-      <b>Фискальный регистратор отключён</b> — COM-порт отпущен
-      {fiscal.releasedBy ? ` (${fiscal.releasedBy})` : ""}. Чеки пробиваются,
-      но не фискализируются. Вернуть — в сервисном режиме.
+      <b>ККМ остановлена</b> — порт свободен
+      {kkm.stoppedBy ? ` (${kkm.stoppedBy})` : ""}. Чеки пробиваются,
+      но не фискализируются. Запустить — в настройке оборудования.
     </div>
   );
 }
