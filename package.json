@@ -19,9 +19,17 @@
     "build:web": "pnpm -r --filter \"./apps/*\" build",
     "contracts:build": "node scripts/build-contract.mjs",
     "contracts:check": "node scripts/build-contract.mjs --check",
-    "typecheck": "pnpm contracts:check && pnpm -r typecheck"
+    "typecheck": "pnpm contracts:check && pnpm -r typecheck",
+    "lint": "biome check .",
+    "lint:fix": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck:front": "pnpm --filter @restopos/shared-types --filter @restopos/api-client --filter @restopos/ui-kit --filter @restopos/desktop --filter @restopos/mobile typecheck",
+    "verify": "pnpm contracts:check && pnpm lint && pnpm typecheck:front && pnpm test && pnpm build:web"
   },
   "devDependencies": {
-    "typescript": "^5.7.3"
+    "@biomejs/biome": "^2.5.6",
+    "typescript": "^5.7.3",
+    "vitest": "^4.1.10"
   }
 }

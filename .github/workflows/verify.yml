@@ -1,0 +1,73 @@
+name: Verify
+
+# В отличие от сборок артефактов (desktop.yml, android.yml), которые запускаются
+# вручную или по метке в коммите, проверки должны идти на каждый push: смысл
+# гейта в том, чтобы сломанное состояние не доживало до сборки.
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      # Бэкенд намеренно не устанавливается и не проверяется: он будет
+      # переписан на C#/C++ (см. docs/plan.md), а Fastify-версия — черновик.
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --filter=!@restopos/backend...
+
+      # Контракт, линтер, типы, тесты и сборка обоих фронтендов.
+      # Тот же самый гейт, что гоняется локально, — чтобы «у меня работает»
+      # и «в CI красное» не расходились.
+      - name: Verify
+        run: pnpm verify
+
+  # Rust-часть кассы: печать кухонных марок (кодировка CP866, ESC/POS, сокет).
+  # Отдельной job, потому что ей нужен тулчейн, а фронту он ни к чему.
+  rust:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Системные зависимости Tauri: без них не соберётся даже тестовый профиль.
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            apps/desktop/src-tauri/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('apps/desktop/src-tauri/Cargo.lock') }}
+
+      - name: Test
+        working-directory: apps/desktop/src-tauri
+        run: cargo test --lib

@@ -58,10 +58,15 @@ export function PinPad({
     [],
   );
 
-  const delay = (ms: number) =>
-    new Promise<void>((resolve) => {
-      timers.current.push(setTimeout(resolve, ms));
-    });
+  // Стабильная ссылка: `press` держит её в зависимостях, а пересоздание
+  // на каждый рендер переподписывало бы слушатель физической клавиатуры.
+  const delay = useCallback(
+    (ms: number) =>
+      new Promise<void>((resolve) => {
+        timers.current.push(setTimeout(resolve, ms));
+      }),
+    [],
+  );
 
   const press = useCallback(
     (key: NumKeyboardKey) => {
@@ -96,7 +101,7 @@ export function PinPad({
         }
       })();
     },
-    [busy, length, setPin],
+    [busy, length, setPin, delay],
   );
 
   useEffect(() => {
