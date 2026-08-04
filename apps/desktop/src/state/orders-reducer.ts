@@ -1,5 +1,6 @@
 import type {
   Order,
+  OrderDiscount,
   OrderItem,
   OrderItemStatus,
   Payment,
@@ -20,9 +21,15 @@ export interface OrdersState {
   orders: Record<UUID, Order>;
   items: Record<UUID, OrderItem>;
   payments: Record<UUID, Payment>;
+  discounts: Record<UUID, OrderDiscount>;
 }
 
-export const EMPTY_STATE: OrdersState = { orders: {}, items: {}, payments: {} };
+export const EMPTY_STATE: OrdersState = {
+  orders: {},
+  items: {},
+  payments: {},
+  discounts: {},
+};
 
 export type OrdersAction =
   | { type: "order/open"; order: Order }
@@ -59,7 +66,9 @@ export type OrdersAction =
       guestNumbers?: (number | null)[];
     }
   | { type: "item/guest"; itemId: UUID; guestNumber: number | null }
-  | { type: "order/guests"; orderId: UUID; guestCount: number };
+  | { type: "order/guests"; orderId: UUID; guestCount: number }
+  | { type: "discount/apply"; discount: OrderDiscount }
+  | { type: "discount/remove"; discountId: UUID };
 
 /** Заказ считается активным, пока не оплачен и не отменён. */
 export const ACTIVE_STATUSES = new Set<Order["status"]>([
@@ -384,6 +393,37 @@ export function reducer(state: OrdersState, action: OrdersAction): OrdersState {
           [item.id]: { ...item, guestNumber: action.guestNumber },
         },
       };
+    }
+
+    /*
+     * Скидка применяется только к незакрытому чеку. После оплаты она уже
+     * учтена в сумме платежей — добавив её задним числом, мы получили бы чек,
+     * где сумма строк оплаты больше итога, и расхождение всплыло бы
+     * при сверке кассы, а не сразу.
+     */
+    case "discount/apply": {
+      const order = state.orders[action.discount.orderId];
+      if (!order || order.status === "paid" || order.status === "canceled") {
+        return state;
+      }
+      if (state.discounts[action.discount.id]) return state;
+      return {
+        ...state,
+        discounts: {
+          ...state.discounts,
+          [action.discount.id]: action.discount,
+        },
+      };
+    }
+
+    case "discount/remove": {
+      const discount = state.discounts[action.discountId];
+      if (!discount) return state;
+      const order = state.orders[discount.orderId];
+      // Снять скидку с закрытого чека нельзя по той же причине: деньги уже взяты.
+      if (order?.status === "paid") return state;
+      const { [action.discountId]: _removed, ...rest } = state.discounts;
+      return { ...state, discounts: rest };
     }
 
     case "order/guests": {

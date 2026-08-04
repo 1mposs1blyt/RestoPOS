@@ -1,5 +1,10 @@
 -- Каноническая схема RestoPOS для PostgreSQL.
--- Применить: pnpm --filter @restopos/backend db:schema
+--
+-- Применить:  psql -U postgres -v ON_ERROR_STOP=1 -f apps/backend/schema.sql
+--
+-- Проверена на PostgreSQL 16. Черновик сервера на Fastify удалён (коммит
+-- «удаление TS сервера»): узел пишется на C#/C++, и этот файл — источник
+-- истины по схеме, а не выгрузка из ORM.
 --
 -- ЧТО ЗДЕСЬ ВЗЯТО ИЗ iiko
 --

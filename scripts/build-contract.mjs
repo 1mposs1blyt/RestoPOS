@@ -121,9 +121,20 @@ ${rolePermissions}
 };
 `;
 
+/**
+ * Сравнение без учёта переводов строк.
+ *
+ * Git на Windows отдаёт файл с CRLF (`core.autocrlf`), а генератор всегда пишет
+ * LF — побайтовая сверка падала на свежем клоне, хотя содержимое совпадало
+ * до символа. Расхождение контракта — вещь серьёзная, и сообщать о нём из-за
+ * перевода строки значит приучить не верить проверке.
+ */
+const sameIgnoringEol = (a, b) =>
+  a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
+
 if (process.argv.includes("--check")) {
   const current = readFileSync(target, "utf8");
-  if (current !== output) {
+  if (!sameIgnoringEol(current, output)) {
     console.error(
       "contract.generated.ts не соответствует contracts/contract.json.\n" +
         "Выполните: pnpm contracts:build",
