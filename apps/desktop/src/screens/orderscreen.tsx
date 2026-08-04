@@ -6,10 +6,11 @@ import { useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
 import { useOrders } from "../state/orders";
 import { usePrinting } from "../state/printing";
+import { useStopList } from "../state/stoplist";
 import { useTables } from "../state/tables";
 import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
 import { formatMoney, multiplyMoney } from "../lib/money";
-import { CashPaymentDialog } from "../components/cashpaymentdialog";
+import { SplitDialog } from "../components/splitdialog";
 
 /**
  * Экран заказа: чек слева, меню справа.
@@ -25,7 +26,7 @@ import { CashPaymentDialog } from "../components/cashpaymentdialog";
  * `order.foreign`), ведёт в диалог подтверждения — см. `app/access.tsx`.
  */
 export function OrderScreen({ tableId }: { tableId: UUID }) {
-  const { back } = useNavigation();
+  const { back, navigate } = useNavigation();
   const { findTable } = useTables();
   const { staff } = useSession();
   const { can, authorize } = useAccess();
@@ -40,11 +41,13 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
     removeItem,
     voidItem,
     setItemStatus,
-    payOrder,
+    splitItem,
+    setGuestCount,
   } = useOrders();
   // Отправка и печать марок — одна операция: разъехавшись, они дают повару
   // на бумаге не то, что у него на экране.
   const { fireOrder } = usePrinting();
+  const { isStopped, entryOf } = useStopList();
 
   const table = findTable(tableId);
   const order = orderOfTable(tableId);
@@ -56,16 +59,16 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
   const [activeCategoryId, setActiveCategoryId] = useState(
     () => MENU_CATEGORIES[0].id,
   );
-  const [isCashOpen, setCashOpen] = useState(false);
   /** Доступ к чужому заказу, подтверждённый на этот заход. */
   const [isForeignApproved, setForeignApproved] = useState(false);
+  /** Позиция, которую делят прямо сейчас. */
+  const [splittingId, setSplittingId] = useState<UUID | null>(null);
 
   // Подтверждение действует на один заказ, а не на терминал: перешли к другому
   // столу — спрашиваем заново.
   // biome-ignore lint/correctness/useExhaustiveDependencies: tableId не читается в теле, он триггер сброса — правило такой приём не различает
   useEffect(() => {
     setForeignApproved(false);
-    setCashOpen(false);
   }, [tableId]);
 
   const categoryItems = useMemo(
@@ -111,15 +114,14 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
     );
   }
 
-  const handleCard = () => {
-    payOrder(order.id, "card");
-    back();
-  };
-
-  const handleCash = () => {
-    payOrder(order.id, "cash");
-    setCashOpen(false);
-    back();
+  /*
+   * Оплата уехала на отдельный экран: способов больше двух, они смешиваются
+   * в одном чеке, и там же считается сдача. Двумя кнопками «Наличные»
+   * и «Картой» это не выражается — гость, платящий тысячей за чек на 700,
+   * должен увидеть сдачу, а не молча закрытый счёт.
+   */
+  const goToPayment = () => {
+    navigate({ name: "payment", orderId: order.id });
   };
 
   const handleVoid = (itemId: UUID) => {
@@ -141,7 +143,15 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
             <h3 className="text-lg font-black text-emerald-400">
               Стол {table?.label ?? "—"}
             </h3>
-            <OrderStatusBadge status={order.status} className="mt-1" />
+            <div className="mt-1 flex items-center gap-2">
+              <OrderStatusBadge status={order.status} />
+              {/* Число гостей нужно и для деления счёта, и для отчётов:
+                  средний чек на гостя — не то же, что средний на заказ. */}
+              <GuestCounter
+                value={order.guestCount ?? 1}
+                onChange={(next) => setGuestCount(order.id, next)}
+              />
+            </div>
           </div>
           <button
             type="button"
@@ -165,10 +175,12 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
                 item={item}
                 canEdit={canEditItems}
                 canServe={canServe}
+                canSplit={can("order.item.split")}
                 onQuantity={setQuantity}
                 onRemove={removeItem}
                 onVoid={handleVoid}
                 onServe={(itemId) => setItemStatus(itemId, "served")}
+                onSplit={setSplittingId}
               />
             ))
           )}
@@ -191,24 +203,14 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
             {canSend ? "Отправить на кухню" : "Всё отправлено на кухню"}
           </button>
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={items.length === 0 || !canPay}
-              onClick={() => setCashOpen(true)}
-              className="min-h-14 rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition hover:bg-slate-700 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-            >
-              Наличные
-            </button>
-            <button
-              type="button"
-              disabled={items.length === 0 || !canPay}
-              onClick={handleCard}
-              className="min-h-14 rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition hover:bg-slate-700 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-            >
-              Картой
-            </button>
-          </div>
+          <button
+            type="button"
+            disabled={items.length === 0 || !canPay}
+            onClick={goToPayment}
+            className="min-h-14 w-full rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition hover:bg-slate-700 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+          >
+            К оплате
+          </button>
 
           {!canPay && (
             <p className="text-center text-xs text-slate-600">
@@ -249,11 +251,13 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
             <button
               key={menuItem.id}
               type="button"
-              disabled={menuItem.isStopListed || !canEditItems}
+              // Стоп-лист терминала важнее флага в меню: он живой, его правит
+              // повар в течение смены, а `isStopListed` из меню — снимок.
+              disabled={isStopped(menuItem.id) || !canEditItems}
               onClick={() => addItem(order.id, menuItem.id)}
               className={cn(
                 "group flex h-28 flex-col items-start justify-between rounded-2xl border p-4 text-left shadow-sm transition",
-                menuItem.isStopListed
+                isStopped(menuItem.id)
                   ? "cursor-not-allowed border-slate-800/40 bg-slate-900/40 opacity-50"
                   : "border-slate-700/40 bg-slate-800/60 hover:border-slate-600/80 hover:bg-slate-800 active:scale-95",
               )}
@@ -261,13 +265,20 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
               <span className="text-sm font-bold leading-tight text-slate-200 group-hover:text-white">
                 {menuItem.name}
               </span>
-              {menuItem.isStopListed ? (
+              {isStopped(menuItem.id) ? (
                 <span className="rounded-lg bg-rose-950/60 px-2 py-0.5 text-xs font-bold text-rose-400">
                   Стоп-лист
                 </span>
               ) : (
                 <span className="rounded-lg border border-slate-800/40 bg-slate-950/40 px-2 py-0.5 text-sm font-black tabular-nums text-orange-400">
                   {formatMoney(menuItem.price)}
+                  {/* Положительный остаток — предупреждение, а не запрет:
+                      блюдо ещё можно продать, и кнопку гасить рано. */}
+                  {entryOf(menuItem.id) && (
+                    <span className="ml-2 text-xs text-amber-400">
+                      ост. {entryOf(menuItem.id)?.remainder}
+                    </span>
+                  )}
                 </span>
               )}
             </button>
@@ -275,13 +286,50 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
         </div>
       </div>
 
-      {isCashOpen && (
-        <CashPaymentDialog
-          total={total}
-          onConfirm={handleCash}
-          onCancel={() => setCashOpen(false)}
+      {splittingId !== null && (
+        <SplitDialog
+          quantity={items.find((item) => item.id === splittingId)?.quantity ?? 1}
+          guestCount={order.guestCount ?? 1}
+          onCancel={() => setSplittingId(null)}
+          onConfirm={(parts, guestNumbers) => {
+            splitItem(splittingId, parts, guestNumbers);
+            setSplittingId(null);
+          }}
         />
       )}
+    </div>
+  );
+}
+
+/** Сколько гостей за столом. Меньше одного не бывает: стол занят. */
+function GuestCounter({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (next: number) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 rounded-lg border border-slate-700/50 bg-slate-800 px-1">
+      <button
+        type="button"
+        aria-label="Меньше гостей"
+        onClick={() => onChange(Math.max(1, value - 1))}
+        className="min-h-11 w-8 text-sm text-slate-400 transition active:bg-slate-700"
+      >
+        −
+      </button>
+      <span className="min-w-8 text-center text-sm font-bold tabular-nums text-slate-200">
+        {value}
+      </span>
+      <button
+        type="button"
+        aria-label="Больше гостей"
+        onClick={() => onChange(value + 1)}
+        className="min-h-11 w-8 text-sm text-slate-400 transition active:bg-slate-700"
+      >
+        +
+      </button>
     </div>
   );
 }
@@ -336,22 +384,35 @@ function CheckLine({
   item,
   canEdit,
   canServe,
+  canSplit,
   onQuantity,
   onRemove,
   onVoid,
   onServe,
+  onSplit,
 }: {
   item: OrderItem;
   canEdit: boolean;
   canServe: boolean;
+  canSplit: boolean;
   onQuantity: (itemId: UUID, quantity: number) => void;
   onRemove: (itemId: UUID) => void;
   onVoid: (itemId: UUID) => void;
   onServe: (itemId: UUID) => void;
+  onSplit: (itemId: UUID) => void;
 }) {
   const menuItem = findMenuItem(item.menuItemId);
   const isEditable = item.status === "new" && canEdit;
   const isVoided = item.status === "voided";
+  const isSplit = item.status === "split";
+  /*
+   * Делят еду, а не заказ: только готовое и поданное. До готовности количество
+   * правят обычным способом — иначе на станцию уедет «полборща», и повар
+   * не поймёт, что готовить (правило продублировано в редьюсере, здесь оно
+   * только гасит кнопку).
+   */
+  const showSplit =
+    canSplit && (item.status === "ready" || item.status === "served");
   // Сторнировать можно то, что уже уехало на кухню и ещё не отдано гостю.
   const canVoid = item.status === "cooking" || item.status === "ready";
   /*
@@ -365,7 +426,10 @@ function CheckLine({
     <div
       className={cn(
         "rounded-xl border border-slate-800/60 bg-slate-900 p-3",
-        isVoided && "opacity-50",
+        (isVoided || isSplit) && "opacity-50",
+        // Доля — часть другой позиции, а не самостоятельная строка:
+        // сдвигаем её, иначе чек читается как удвоенный заказ.
+        item.splitOf && "ml-4 border-l-2 border-l-orange-500/40",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -380,12 +444,17 @@ function CheckLine({
           </p>
           <p className="text-xs tabular-nums text-slate-500">
             {menuItem ? formatMoney(menuItem.price) : "—"}
+            {item.guestNumber != null && (
+              <span className="ml-2 text-orange-400/80">
+                гость {item.guestNumber}
+              </span>
+            )}
           </p>
         </div>
         <span
           className={cn(
             "text-sm font-bold tabular-nums",
-            isVoided && "line-through",
+            (isVoided || isSplit) && "line-through",
           )}
         >
           {menuItem ? formatMoney(multiplyMoney(menuItem.price, item.quantity)) : "—"}
@@ -441,6 +510,15 @@ function CheckLine({
                 className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-500 transition hover:bg-rose-500/10 hover:text-rose-400"
               >
                 Сторно
+              </button>
+            )}
+            {showSplit && (
+              <button
+                type="button"
+                onClick={() => onSplit(item.id)}
+                className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-500 transition hover:bg-orange-500/10 hover:text-orange-300"
+              >
+                Разделить
               </button>
             )}
           </div>

@@ -1,19 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type {
   Money,
   Order,
   OrderItem,
-  PaymentMethod,
+  Payment,
+  PaymentKind,
   UUID,
 } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { useAccess } from "../app/access";
+import { useNavigation } from "../app/navigation";
 import { useOrders } from "../state/orders";
 import { usePrinting } from "../state/printing";
+import { useStopList } from "../state/stoplist";
 import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
 import { formatMoney, multiplyMoney } from "../lib/money";
 import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
-import { CashPaymentDialog } from "../components/cashpaymentdialog";
 
 /**
  * Расчёт на прилавке — режим `counter` (шаурмечная, кофейня навынос).
@@ -24,32 +26,51 @@ import { CashPaymentDialog } from "../components/cashpaymentdialog";
  */
 export function CounterScreen() {
   const { can, authorize } = useAccess();
+  const { navigate } = useNavigation();
   const {
+    state: { orders },
     counterOrder,
     openOrder,
     itemsOfOrder,
     orderTotal,
+    paymentsOfOrder,
     addItem,
     setQuantity,
     removeItem,
-    payOrder,
     cancelOrder,
   } = useOrders();
   const { fireOrder } = usePrinting();
+  // Живой стоп-лист терминала, а не снимок `isStopListed` из меню: его правит
+  // повар в течение смены, и на прилавке это заметно сразу.
+  const { isStopped } = useStopList();
 
   const [activeCategoryId, setActiveCategoryId] = useState(
     () => MENU_CATEGORIES[0].id,
   );
-  const [isCashOpen, setCashOpen] = useState(false);
   /** Только что рассчитанный заказ: номер называют гостю, способ — для сверки. */
   const [served, setServed] = useState<{
     number: number;
-    method: PaymentMethod;
+    payments: Payment[];
   } | null>(null);
 
   useEffect(() => {
     if (!counterOrder) openOrder(null);
   }, [counterOrder, openOrder]);
+
+  /*
+   * Заказ закрылся на экране оплаты — показываем номер здесь, вернувшись.
+   * Следим за исчезновением активного заказа, а не за нажатием «Оплатить»:
+   * оплата происходит на другом экране, и этот про её кнопку ничего не знает.
+   */
+  const previousOrderRef = useRef<Order | null>(null);
+  useEffect(() => {
+    const previous = previousOrderRef.current;
+    previousOrderRef.current = counterOrder ?? null;
+    if (!previous || counterOrder?.id === previous.id) return;
+    const closed = orders[previous.id];
+    if (closed?.status !== "paid") return;
+    setServed({ number: closed.number, payments: paymentsOfOrder(closed.id) });
+  }, [counterOrder, orders, paymentsOfOrder]);
 
   const categoryItems = useMemo(
     () => menuItemsOfCategory(activeCategoryId),
@@ -61,14 +82,15 @@ export function CounterScreen() {
   const items = itemsOfOrder(counterOrder.id);
   const total = orderTotal(counterOrder.id);
 
-  const handlePay = (method: PaymentMethod) => {
-    // Порядок важен: сначала на кухню, потом оплата. `fireOrder`
-    // переводит позиции в работу, и тикет остаётся на кухонном экране
-    // даже после того, как заказ стал `paid`.
+  /*
+   * Порядок важен: сначала на кухню, потом оплата. `fireOrder` переводит
+   * позиции в работу, и тикет остаётся на кухонном экране даже после того,
+   * как заказ стал `paid` — на прилавке платят вперёд, но еда от этого
+   * не готова.
+   */
+  const goToPayment = () => {
     fireOrder(counterOrder.id);
-    payOrder(counterOrder.id, method);
-    setServed({ number: counterOrder.number, method });
-    setCashOpen(false);
+    navigate({ name: "payment", orderId: counterOrder.id });
   };
 
   /*
@@ -97,8 +119,7 @@ export function CounterScreen() {
         canEdit={can("order.item.add")}
         onQuantity={setQuantity}
         onRemove={removeItem}
-        onCash={() => setCashOpen(true)}
-        onCard={() => handlePay("card")}
+        onPay={goToPayment}
         onReset={handleReset}
         onCloseOverlay={() => setServed(null)}
       />
@@ -127,11 +148,11 @@ export function CounterScreen() {
             <button
               key={menuItem.id}
               type="button"
-              disabled={menuItem.isStopListed || !can("order.item.add")}
+              disabled={isStopped(menuItem.id) || !can("order.item.add")}
               onClick={() => addItem(counterOrder.id, menuItem.id)}
               className={cn(
                 "group flex h-28 flex-col items-start justify-between rounded-2xl border p-4 text-left shadow-sm transition",
-                menuItem.isStopListed
+                isStopped(menuItem.id)
                   ? "cursor-not-allowed border-slate-800/40 bg-slate-900/40 opacity-50"
                   : "border-slate-700/40 bg-slate-800/60 hover:border-slate-600/80 hover:bg-slate-800 active:scale-95",
               )}
@@ -139,7 +160,7 @@ export function CounterScreen() {
               <span className="text-sm font-bold leading-tight text-slate-200 group-hover:text-white">
                 {menuItem.name}
               </span>
-              {menuItem.isStopListed ? (
+              {isStopped(menuItem.id) ? (
                 <span className="rounded-lg bg-rose-950/60 px-2 py-0.5 text-xs font-bold text-rose-400">
                   Стоп-лист
                 </span>
@@ -154,14 +175,6 @@ export function CounterScreen() {
       </div>
 
       <OrderQueue />
-
-      {isCashOpen && (
-        <CashPaymentDialog
-          total={total}
-          onConfirm={() => handlePay("cash")}
-          onCancel={() => setCashOpen(false)}
-        />
-      )}
     </div>
   );
 }
@@ -175,7 +188,7 @@ export function CounterScreen() {
  * отдана, а не когда получены деньги.
  */
 function OrderQueue() {
-  const { kitchenTickets, setItemStatus, paymentOfOrder } = useOrders();
+  const { kitchenTickets, setItemStatus, paymentsOfOrder } = useOrders();
   const { can } = useAccess();
   const now = useNow(15_000);
   // Выдача гостю, а не кухонный статус: на прилавке заказ отдаёт кассир.
@@ -205,7 +218,7 @@ function OrderQueue() {
               number={order.number}
               createdAt={order.createdAt}
               items={items}
-              method={paymentOfOrder(order.id)?.method}
+              payments={paymentsOfOrder(order.id)}
               now={now}
               canIssue={canIssue}
               onIssued={() => {
@@ -222,34 +235,44 @@ function OrderQueue() {
 /** Через сколько минут ожидания заказ подсвечивается как просроченный. */
 const LATE_AFTER_MINUTES = 10;
 
-const PAYMENT_LABELS: Record<PaymentMethod, string> = {
-  cash: "Наличные",
-  card: "Безнал",
-};
-
-const PAYMENT_STYLES: Record<PaymentMethod, string> = {
+const PAYMENT_STYLES: Record<PaymentKind, string> = {
   cash: "bg-emerald-950/70 text-emerald-300 border-emerald-800/60",
   card: "bg-sky-950/70 text-sky-300 border-sky-800/60",
+  external: "bg-violet-950/70 text-violet-300 border-violet-800/60",
+  no_revenue: "bg-slate-800/70 text-slate-400 border-slate-700/60",
 };
 
-/** Чем рассчитались. Кассиру нужно при сверке кассы и при возврате. */
-function PaymentBadge({
-  method,
+/**
+ * Чем рассчитались. Кассиру нужно при сверке кассы и при возврате.
+ *
+ * Бейджей может быть несколько: чек, оплаченный частью картой и частью
+ * наличными, — обычное дело, и показывать только первый способ значит
+ * подсказать кассиру неверную сумму при возврате.
+ */
+function PaymentBadges({
+  payments,
   className,
 }: {
-  method: PaymentMethod;
+  payments: Payment[];
   className?: string;
 }) {
   return (
-    <span
-      className={cn(
-        "inline-flex items-center rounded-md border px-2 py-1 text-xs font-bold",
-        PAYMENT_STYLES[method],
-        className,
-      )}
-    >
-      {PAYMENT_LABELS[method]}
-    </span>
+    <>
+      {payments
+        .filter((payment) => payment.refundOf === null)
+        .map((payment) => (
+          <span
+            key={payment.id}
+            className={cn(
+              "inline-flex items-center rounded-md border px-2 py-1 text-xs font-bold",
+              PAYMENT_STYLES[payment.kind],
+              className,
+            )}
+          >
+            {payment.label}
+          </span>
+        ))}
+    </>
   );
 }
 
@@ -257,7 +280,7 @@ function QueueCard({
   number,
   createdAt,
   items,
-  method,
+  payments,
   now,
   canIssue,
   onIssued,
@@ -265,8 +288,8 @@ function QueueCard({
   number: number;
   createdAt: string;
   items: OrderItem[];
-  /** `undefined` — заказ ещё не рассчитан (заказы из зала). */
-  method: PaymentMethod | undefined;
+  /** Пусто — заказ ещё не рассчитан (заказы из зала). */
+  payments: Payment[];
   now: number;
   canIssue: boolean;
   onIssued: () => void;
@@ -300,9 +323,9 @@ function QueueCard({
         ))}
       </ul>
 
-      <div className="px-3 py-2">
-        {method ? (
-          <PaymentBadge method={method} />
+      <div className="flex flex-wrap gap-1 px-3 py-2">
+        {payments.length > 0 ? (
+          <PaymentBadges payments={payments} />
         ) : (
           <span className="inline-flex items-center rounded-md border border-amber-800/60 bg-amber-950/70 px-2 py-1 text-xs font-bold text-amber-300">
             Не оплачен
@@ -331,21 +354,19 @@ function CounterCheck({
   canEdit,
   onQuantity,
   onRemove,
-  onCash,
-  onCard,
+  onPay,
   onReset,
   onCloseOverlay,
 }: {
   order: Order;
   items: OrderItem[];
   total: Money;
-  served: { number: number; method: PaymentMethod } | null;
+  served: { number: number; payments: Payment[] } | null;
   canPay: boolean;
   canEdit: boolean;
   onQuantity: (itemId: UUID, quantity: number) => void;
   onRemove: (itemId: UUID) => void;
-  onCash: () => void;
-  onCard: () => void;
+  onPay: () => void;
   onReset: () => void;
   onCloseOverlay: () => void;
 }) {
@@ -396,30 +417,20 @@ function CounterCheck({
           </span>
         </div>
 
-        <div className="grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={items.length === 0 || !canPay}
-            onClick={onCash}
-            className="min-h-16 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-base font-bold text-white shadow-lg shadow-emerald-900/20 transition hover:from-emerald-500 hover:to-teal-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-          >
-            Наличные
-          </button>
-          <button
-            type="button"
-            disabled={items.length === 0 || !canPay}
-            onClick={onCard}
-            className="min-h-16 rounded-xl bg-gradient-to-r from-sky-600 to-indigo-600 text-base font-bold text-white shadow-lg shadow-sky-900/20 transition hover:from-sky-500 hover:to-indigo-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-          >
-            Картой
-          </button>
-        </div>
+        <button
+          type="button"
+          disabled={items.length === 0 || !canPay}
+          onClick={onPay}
+          className="min-h-16 w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-base font-bold text-white shadow-lg shadow-emerald-900/20 transition hover:from-emerald-500 hover:to-teal-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
+        >
+          К оплате
+        </button>
       </div>
 
       {served !== null && (
         <PaidOverlay
           number={served.number}
-          method={served.method}
+          payments={served.payments}
           onClose={onCloseOverlay}
         />
       )}
@@ -433,11 +444,11 @@ function CounterCheck({
  */
 function PaidOverlay({
   number,
-  method,
+  payments,
   onClose,
 }: {
   number: number;
-  method: PaymentMethod;
+  payments: Payment[];
   onClose: () => void;
 }) {
   return (
@@ -449,7 +460,9 @@ function PaidOverlay({
         <p className="mt-2 text-7xl font-black tabular-nums text-emerald-400">
           {number}
         </p>
-        <PaymentBadge method={method} className="mt-4" />
+        <div className="mt-4 flex flex-wrap justify-center gap-1">
+          <PaymentBadges payments={payments} />
+        </div>
       </div>
       <button
         type="button"

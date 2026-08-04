@@ -5,5 +5,7 @@ export * from "./venue";
 export * from "./menu";
 export * from "./kitchen";
 export * from "./orders";
+export * from "./shifts";
+export * from "./delivery";
 export * from "./warehouse";
 export * from "./events";

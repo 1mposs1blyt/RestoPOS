@@ -22,11 +22,22 @@ import type {
  * типизированный переход с параметрами и стек «назад» — их и даёт этот модуль.
  */
 export type Route =
+  | { name: "menu" }
   | { name: "hall" }
   | { name: "order"; tableId: UUID }
   | { name: "counter" }
+  | { name: "payment"; orderId: UUID }
+  | { name: "cash" }
   | { name: "kitchen" }
   | { name: "stations" }
+  | { name: "personal" }
+  | { name: "audit" }
+  | { name: "attendance" }
+  | { name: "delivery" }
+  | { name: "reports" }
+  | { name: "stoplist" }
+  | { name: "guests" }
+  | { name: "documents" }
   | { name: "service" };
 
 export type RouteName = Route["name"];
@@ -38,6 +49,17 @@ interface RouteSpec {
   permission: Permission;
   /** Модуль тарифа, без которого экрана нет. */
   feature?: FeatureCode;
+  /**
+   * Сопутствующий экран: доступен, но сам по себе не повод пускать сотрудника
+   * на этот терминал.
+   *
+   * Личная страница есть у всех и везде. Без этой пометки пересечение прав
+   * никогда бы не оказалось пустым, и отказ входа («повару у кассы делать
+   * нечего») перестал бы срабатывать — повар попадал бы внутрь и видел один
+   * экран со своей выработкой. Формально не пустой экран, фактически —
+   * та же непонятная ситуация, ради которой отказ и вводился.
+   */
+  accessory?: true;
 }
 
 /**
@@ -49,15 +71,30 @@ interface RouteSpec {
  * и каждый следующий `switch` по типу терминала пришлось бы переписывать целиком.
  */
 const ROUTE_SPECS: Record<RouteName, RouteSpec> = {
+  /*
+   * Хаб доступен любому сотруднику и на любом терминале, поэтому сопутствующий:
+   * сам по себе он не повод пускать за кассу — там не работают, оттуда только
+   * расходятся. Стартовым экраном он при этом становится (см. `DEFAULT_ORDER`):
+   * это независимые свойства.
+   */
+  menu: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "staff.self",
+    accessory: true,
+  },
   hall: {
     terminals: ["pos", "admin"],
     serviceModes: ["tables"],
     permission: "order.view",
   },
+  // Открывается только из зала и без стола бессмыслен — сопутствующий,
+  // как и экран оплаты: в переключателе экранов ему делать нечего.
   order: {
     terminals: ["pos", "admin"],
     serviceModes: ["tables"],
     permission: "order.view",
+    accessory: true,
   },
   // У прилавочного заведения схемы зала не существует: вместо `hall`/`order`
   // единственный экран расчёта. Это не «урезанная касса», а другой набор
@@ -66,6 +103,21 @@ const ROUTE_SPECS: Record<RouteName, RouteSpec> = {
     terminals: ["pos", "admin"],
     serviceModes: ["counter"],
     permission: "order.view",
+  },
+  // Экран оплаты открывается из заказа и без него бессмыслен, поэтому
+  // сопутствующий: в стартовые кандидаты он не идёт, как и `order`.
+  payment: {
+    terminals: ["pos", "admin"],
+    serviceModes: null,
+    permission: "payment.accept",
+    accessory: true,
+  },
+  // Кассовая смена и движения по ящику. Режим обслуживания не важен: ящик
+  // есть и у шаурмечной.
+  cash: {
+    terminals: ["pos", "admin"],
+    serviceModes: null,
+    permission: "cash.drawer",
   },
   kitchen: {
     terminals: ["kds", "admin"],
@@ -79,6 +131,73 @@ const ROUTE_SPECS: Record<RouteName, RouteSpec> = {
     terminals: ["pos", "kds", "admin"],
     serviceModes: null,
     permission: "station.manage",
+  },
+  // Своя страница есть у любого сотрудника и на любом терминале: повар у KDS
+  // закрывает личную смену там же, где работает. Право `staff.self` есть
+  // у всех ролей, кроме вендорского `support` — он не сотрудник заведения.
+  personal: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "staff.self",
+    accessory: true,
+  },
+  // Разбор смены менеджер ведёт там, где стоит: у кассы или у админского
+  // терминала. Сопутствующий — ради журнала за терминал не встают.
+  audit: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "audit.view",
+    accessory: true,
+  },
+  // Табель ведут там, где стоит менеджер. Сопутствующий: ради него одного
+  // за терминал не встают.
+  attendance: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "staff.attendance",
+    accessory: true,
+  },
+  /*
+   * Доставка — рабочий экран, а не сопутствующий: диспетчер за терминалом
+   * весь день занят только ей. Модуль оплачивается отдельно (`delivery`),
+   * и в зале её не бывает — у прилавочных заведений доставка как раз обычна.
+   */
+  delivery: {
+    terminals: ["pos", "admin"],
+    serviceModes: null,
+    permission: "delivery.view",
+    feature: "delivery",
+  },
+  // Отчёты смотрят между делом, не ради них встают за кассу — сопутствующий.
+  reports: {
+    terminals: ["pos", "admin"],
+    serviceModes: null,
+    permission: "report.view",
+    accessory: true,
+  },
+  /*
+   * Стоп-лист вносит и повар с кухонного монитора — он первым узнаёт, что
+   * продукт кончился. Поэтому терминал любой, а не только касса.
+   */
+  stoplist: {
+    terminals: ["pos", "kds", "admin"],
+    serviceModes: null,
+    permission: "menu.stoplist",
+    accessory: true,
+  },
+  // Справочник постоянных гостей. К кухне отношения не имеет.
+  guests: {
+    terminals: ["pos", "admin"],
+    serviceModes: null,
+    permission: "guest.manage",
+    accessory: true,
+  },
+  // Реестр заказов и документы смены.
+  documents: {
+    terminals: ["pos", "admin"],
+    serviceModes: null,
+    permission: "document.view",
+    accessory: true,
   },
   // Сервисный экран доступен на терминале любого типа: чинить приходится и KDS.
   service: {
@@ -117,13 +236,41 @@ export function routesFor(scope: AccessScope): RouteName[] {
 }
 
 /**
+ * Есть ли сотруднику что делать на этом терминале.
+ *
+ * Отличается от «есть ли доступные экраны» ровно на сопутствующие маршруты:
+ * личная страница доступна всегда, но ради неё одной пускать за терминал
+ * незачем. Пустой ответ — это отказ входа (`session.tsx`), а не пустой экран.
+ */
+export function hasWorkOn(scope: AccessScope): boolean {
+  return workRoutesFor(scope).length > 0;
+}
+
+/**
+ * Доступные **рабочие** экраны — без сопутствующих.
+ *
+ * Отдельная функция, а не фильтр по списку имён у вызывающего: пометка
+ * `accessory` живёт в `ROUTE_SPECS`, и знание о том, какие маршруты
+ * сопутствующие, не должно расползаться по коду и тестам.
+ */
+export function workRoutesFor(scope: AccessScope): RouteName[] {
+  return routesFor(scope).filter((name) => ROUTE_SPECS[name].accessory !== true);
+}
+
+/**
  * Порядок, в котором ищется стартовый экран. `order` сюда не входит:
  * он требует стол и открывается только переходом из зала.
  */
 const DEFAULT_ORDER: readonly RouteName[] = [
+  // Хаб первым: с него видно состояние обеих смен и расходятся все экраны.
+  // Повару, которого вход не пустил бы, он не достаётся — отказ решается
+  // раньше, в `hasWorkOn`.
+  "menu",
   "hall",
   "counter",
   "kitchen",
+  // Кассир, которому нечего делать в зале, попадает на экран кассы.
+  "cash",
   // Настройка станций — последний кандидат: менеджер на KDS-терминале
   // без оплаченного модуля кухни должен куда-то попасть.
   "stations",
@@ -138,6 +285,14 @@ const DEFAULT_ORDER: readonly RouteName[] = [
  * в отказ входа, а не в пустой экран (см. `session.tsx`).
  */
 export function defaultRouteFor(scope: AccessScope): Route | null {
+  /*
+   * Сопутствующие экраны не делают терминал пригодным для работы, поэтому
+   * и стартовым экраном не становятся: иначе повар у кассы получал бы хаб
+   * с одной плиткой «Личная страница» вместо внятного отказа входа.
+   * Хаб — стартовый экран для тех, у кого работа тут есть, и только.
+   */
+  if (!hasWorkOn(scope)) return null;
+
   const available = routesFor(scope);
   const name = DEFAULT_ORDER.find((candidate) => available.includes(candidate));
   return name === undefined ? null : ({ name } as Route);

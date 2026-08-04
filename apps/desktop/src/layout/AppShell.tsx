@@ -3,8 +3,8 @@ import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
 import {
-  routesFor,
   useNavigation,
+  workRoutesFor,
   type AccessScope,
   type RouteName,
 } from "../app/navigation";
@@ -102,8 +102,11 @@ export function AppShell({
 }
 
 const ROUTE_LABELS: Partial<Record<RouteName, string>> = {
+  menu: "Меню",
   hall: "Зал",
   counter: "Прилавок",
+  cash: "Касса",
+  delivery: "Доставка",
   kitchen: "Кухня",
   stations: "Станции",
   service: "Сервис",
@@ -112,13 +115,14 @@ const ROUTE_LABELS: Partial<Record<RouteName, string>> = {
 /**
  * Переключатель между доступными экранами.
  *
- * Нужен, как только у терминала их больше одного: у менеджера это зал плюс
- * настройка станций, у админского терминала — ещё и кухня. `order` сюда
- * не попадает: он требует стол и открывается только из зала.
+ * Показывает главное меню и **рабочие** экраны. Сопутствующие сюда не идут:
+ * экран оплаты без заказа бессмыслен, а личная страница открывается из хаба —
+ * в верхней панели они были бы двумя лишними мишенями на сенсорном экране,
+ * куда попадают случайно.
  */
 function RouteSwitcher({ scope }: { scope: AccessScope }) {
   const { route, reset } = useNavigation();
-  const available = routesFor(scope).filter((name) => name !== "order");
+  const available: RouteName[] = ["menu", ...workRoutesFor(scope)];
 
   if (available.length < 2) return null;
 

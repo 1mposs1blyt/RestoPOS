@@ -18,12 +18,13 @@ import type {
 import { loadState, saveState } from "../lib/storage";
 import {
   DEMO_SHIFT_ID,
+  DEMO_TERMINAL_ID,
   DEMO_VENUE,
   approve,
   authenticate,
 } from "../data/session-source";
 import { useEntitlements } from "./entitlements";
-import { routesFor } from "./navigation";
+import { hasWorkOn } from "./navigation";
 
 /**
  * Смена терминала: кто за кассой, какое заведение, какой тип терминала.
@@ -48,6 +49,8 @@ export function roleLabel(role: StaffRole): string {
 interface SessionValue {
   venue: Venue;
   shiftId: UUID;
+  /** Регистрация терминала: кассовая смена принадлежит ему, а не заведению. */
+  terminalId: UUID;
   staff: Staff | null;
   terminalKind: TerminalKind;
   /**
@@ -128,14 +131,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
        * проверка обязана быть и там: вход мимо интерфейса не должен выдавать
        * токен смены тому, кому на этом терминале делать нечего.
        */
-      const available = routesFor({
+      const hasWork = hasWorkOn({
         kind: terminalKind,
         serviceMode,
         permissions: authenticated.permissions,
         features,
       });
 
-      if (available.length === 0) {
+      // Сопутствующие экраны (личная страница) в счёт не идут: ради своей
+      // выработки за кассу не встают.
+      if (!hasWork) {
         throw new Error(
           `${roleLabel(authenticated.staff.role)}: на этом терминале нет доступных экранов`,
         );
@@ -176,6 +181,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     () => ({
       venue: { ...DEMO_VENUE, serviceMode },
       shiftId: DEMO_SHIFT_ID,
+      terminalId: DEMO_TERMINAL_ID,
       staff,
       terminalKind,
       stationId,
