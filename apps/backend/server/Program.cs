@@ -1,5 +1,6 @@
 using Npgsql;
 using server.Data;
+using server.repos;
 using server.Repositories;
 using server.Services;
 using System.Data;
@@ -28,6 +29,7 @@ builder.Services.AddSwaggerGen();
 // --- DI Registration ---
 builder.Services.AddScoped<IAuthRepository, AuthRepository>();
 builder.Services.AddScoped<IRoutesService, RoutesService>();
+builder.Services.AddScoped<IHallRepository, HallRepository>();
 // -----------------------
 
 // CORS для терминала.
