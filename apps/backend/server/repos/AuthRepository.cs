@@ -99,13 +99,14 @@ public class AuthRepository : IAuthRepository
         await db.ExecuteAsync(sql, new { VenueId = venueId, Permission = permission, Subject = subject, EntityId = entityId, ActorId = actorId, ApprovedBy = approvedBy, TerminalId = terminalId });
     }
 
-    public List<string> GetPermissionsForRole(string role) => role switch
-    {
-        "manager" => ["staff.self", "order.view", "payment.accept", "cash.drawer", "kitchen.view", "station.manage", "audit.view", "staff.attendance", "delivery.view", "report.view", "menu.stoplist", "guest.manage", "document.view", "terminal.service"],
-        "cook" => ["staff.self", "kitchen.view", "menu.stoplist", "staff.attendance"],
-        "cashier" => ["staff.self", "order.view", "payment.accept", "cash.drawer", "staff.attendance"],
-        _ => ["staff.self"]
-    };
+    /// <summary>
+    /// Права роли — из общей матрицы контракта, а не из списка в этом файле.
+    /// Рукописная копия здесь уже разъезжалась с фронтом: у менеджера не было
+    /// `hall.layout.edit`, и конструктор зала пропадал, стоило подключить кассу
+    /// к узлу. Правится только contracts/contract.json, дальше pnpm contracts:build.
+    /// </summary>
+    public List<string> GetPermissionsForRole(string role) =>
+        Contract.PermissionsOf(role).ToList();
 
     private class ContextRowDto
     {

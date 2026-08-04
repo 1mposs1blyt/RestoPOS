@@ -130,6 +130,86 @@ ${rolePermissions}
 };
 `;
 
+/** `["a", "b"]` элементами по строке с заданным отступом. */
+function csList(values, indent) {
+  return values.map((value) => `${indent}${JSON.stringify(value)},`).join("\n");
+}
+
+const csRolePermissions = contract.roles
+  .map((role) => {
+    const list = csList(contract.rolePermissions[role], "            ");
+    return `        [${JSON.stringify(role)}] = new[]\n        {\n${list}\n        },`;
+  })
+  .join("\n");
+
+const csharpOutput = `/*
+ * СГЕНЕРИРОВАННЫЙ ФАЙЛ — не редактировать.
+ * Источник: contracts/contract.json, генератор: scripts/build-contract.mjs.
+ * Пересобрать: pnpm contracts:build
+ *
+ * Матрица прав у узла и у терминала обязана быть одной и той же. Рукописная
+ * копия здесь разъезжается с фронтом на первой же правке контракта, и заметно
+ * это становится по симптому вида «у менеджера пропал конструктор зала».
+ */
+
+namespace server;
+
+public static class Contract
+{
+    public const int Version = ${contract.version};
+
+    /** Шаблон имени комнаты realtime. Должен совпадать байт-в-байт с терминалом. */
+    public const string RoomPattern = ${JSON.stringify(contract.conventions.roomPattern)};
+
+    public static readonly IReadOnlyList<string> Roles = new[]
+    {
+${csList(contract.roles, "        ")}
+    };
+
+    public static readonly IReadOnlyList<string> Permissions = new[]
+    {
+${csList(contract.permissions, "        ")}
+    };
+
+    public static readonly IReadOnlyList<string> ErrorCodes = new[]
+    {
+${csList(contract.errorCodes, "        ")}
+    };
+
+    public static readonly IReadOnlyList<string> EventTopics = new[]
+    {
+${csList(contract.eventTopics, "        ")}
+    };
+
+    /// <summary>Права, которые можно получить разово — подтверждением сотрудника, у которого они есть по роли.</summary>
+    public static readonly IReadOnlySet<string> Overridable = new HashSet<string>
+    {
+${csList(contract.overridablePermissions, "        ")}
+    };
+
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> RolePermissions =
+        new Dictionary<string, IReadOnlyList<string>>
+    {
+${csRolePermissions}
+    };
+
+    /// <summary>Права роли. Неизвестная роль — пустой набор, а не исключение: отказ решает вызывающий.</summary>
+    public static IReadOnlyList<string> PermissionsOf(string role) =>
+        RolePermissions.TryGetValue(role, out var permissions) ? permissions : Array.Empty<string>();
+
+    public static bool HasPermission(string role, string permission) =>
+        PermissionsOf(role).Contains(permission);
+
+    /// <summary>
+    /// Может ли обладатель роли подтвердить чужое действие. Подтверждает тот,
+    /// у кого право есть по роли, — не обязательно менеджер: возврат и чужой
+    /// заказ кассир подтверждает сам.
+    /// </summary>
+    public static bool CanApprove(string role, string permission) =>
+        Overridable.Contains(permission) && HasPermission(role, permission);
+}
+`;
+
 /**
  * Сравнение без учёта переводов строк.
  *
@@ -141,20 +221,30 @@ ${rolePermissions}
 const sameIgnoringEol = (a, b) =>
   a.replace(/\r\n/g, "\n") === b.replace(/\r\n/g, "\n");
 
+const artifacts = [
+  { path: target, name: "contract.generated.ts", content: output },
+  { path: csharpTarget, name: "Contract.generated.cs", content: csharpOutput },
+];
+
 if (process.argv.includes("--check")) {
-  const current = readFileSync(target, "utf8");
-  if (!sameIgnoringEol(current, output)) {
+  const stale = artifacts.filter(
+    (artifact) => !sameIgnoringEol(readFileSync(artifact.path, "utf8"), artifact.content),
+  );
+  if (stale.length > 0) {
     console.error(
-      "contract.generated.ts не соответствует contracts/contract.json.\n" +
+      `${stale.map((artifact) => artifact.name).join(", ")} ` +
+        "не соответствует contracts/contract.json.\n" +
         "Выполните: pnpm contracts:build",
     );
     process.exit(1);
   }
   console.log("Контракт согласован.");
 } else {
-  writeFileSync(target, output, "utf8");
+  for (const artifact of artifacts) {
+    writeFileSync(artifact.path, artifact.content, "utf8");
+  }
   console.log(
-    `Сгенерировано: ${contract.permissions.length} прав, ` +
+    `Сгенерировано (${artifacts.length} файла): ${contract.permissions.length} прав, ` +
       `${contract.roles.length} ролей, ${contract.errorCodes.length} кодов ошибок.`,
   );
 }

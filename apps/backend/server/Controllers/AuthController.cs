@@ -58,8 +58,12 @@ public class AuthController : ControllerBase
         if (approver == null)
             return Unauthorized(new { error = "invalid_pin", message = "Неверный PIN-код подтверждающего" });
 
-        if (approver.Role != "manager")
-            return StatusCode(403, new { error = "insufficient_permissions", message = "Недостаточно прав для подтверждения действия" });
+        // Подтверждает не «менеджер», а любой, у кого право есть по роли:
+        // возврат и чужой заказ кассир подтверждает сам (docs/access.md).
+        // Проверка идёт по матрице контракта, а не по имени роли — иначе
+        // «нашим кассирам можно возврат» пришлось бы править в двух языках.
+        if (!Contract.CanApprove(approver.Role, request.Permission))
+            return StatusCode(403, new { error = "override_not_permitted", message = "У этого сотрудника нет такого права" });
 
         // В реальном запросе actorId вытаскивается из Auth Context сессии кассира
         var actorId = approver.Id;
