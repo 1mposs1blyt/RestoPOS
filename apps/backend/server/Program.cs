@@ -1,6 +1,8 @@
 using Npgsql;
-using System.Data;
 using server.Data;
+using server.Repositories;
+using server.Services;
+using System.Data;
 
 
 
@@ -21,6 +23,13 @@ builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+
+// --- DI Registration ---
+builder.Services.AddScoped<IAuthRepository, AuthRepository>();
+builder.Services.AddScoped<IRoutesService, RoutesService>();
+// -----------------------
+
 
 var app = builder.Build();
 
