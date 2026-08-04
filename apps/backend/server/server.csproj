@@ -11,7 +11,7 @@
     <PackageReference Include="dbup-postgresql" Version="7.0.1" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-    <EmbeddedResource Include="D:\RestoPOS\apps\backend\server\Data\schema.sql" />
+    <EmbeddedResource Include="C:\dev\RestoPOS\apps\backend\server\Data\schema.sql" />
   </ItemGroup>
 
 </Project>
