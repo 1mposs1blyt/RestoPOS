@@ -19,6 +19,7 @@ import { PrintingProvider } from "./state/printing";
 import { DeliveryProvider } from "./state/delivery";
 import { GuestsProvider } from "./state/guests";
 import { ShiftsProvider } from "./state/shifts";
+import { TerminalProvider } from "./state/terminal";
 import { StopListProvider } from "./state/stoplist";
 import { StationsProvider } from "./state/stations";
 import { TablesProvider } from "./state/tables";
@@ -106,7 +107,10 @@ function Terminal() {
     <AccessProvider>
       {/* Станции выше заказов: отправка на кухню решает по ним, куда уезжает
           позиция и надо ли считать её готовой сразу (станция без экрана). */}
-      <StationsProvider>
+      {/* Оборудование выше всего: отпущенный COM-порт ФР показывает оболочка
+          на каждом экране, а денежный ящик и чековый принтер нужны кассе. */}
+      <TerminalProvider>
+        <StationsProvider>
         {/* Смены выше заказов: заказ закрывается в кассовую смену, и её номер
             попадает в чек. Обратный порядок означал бы, что чек уже создан,
             а смены, к которой он относится, ещё нет. */}
@@ -141,8 +145,9 @@ function Terminal() {
               </OrdersProvider>
             </TablesProvider>
           </StopListProvider>
-        </ShiftsProvider>
-      </StationsProvider>
+          </ShiftsProvider>
+        </StationsProvider>
+      </TerminalProvider>
     </AccessProvider>
   );
 }

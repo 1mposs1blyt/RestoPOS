@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
+import { useTerminal } from "../state/terminal";
 import {
   useNavigation,
   workRoutesFor,
@@ -15,6 +16,28 @@ const TERMINAL_LABELS: Record<TerminalKind, string> = {
   kds: "Кухня",
   admin: "Админка",
 };
+
+/**
+ * Полоса «фискальный регистратор отключён».
+ *
+ * Висит на всех экранах, а не только на сервисном, потому что состояние
+ * забывается: тех. специалист отпустил порт под утилиту производителя и ушёл,
+ * а обнаруживает это кассир — в момент, когда гость уже стоит с деньгами.
+ * Полоса стоит между шапкой и экраном, чтобы не перекрывать содержимое
+ * и при этом попадаться на глаза при любом действии.
+ */
+function FiscalPortBanner() {
+  const { fiscal } = useTerminal();
+  if (fiscal.isConnected) return null;
+
+  return (
+    <div className="shrink-0 border-x border-b border-amber-900/60 bg-amber-950/50 px-5 py-2 text-sm text-amber-300">
+      <b>Фискальный регистратор отключён</b> — COM-порт отпущен
+      {fiscal.releasedBy ? ` (${fiscal.releasedBy})` : ""}. Чеки пробиваются,
+      но не фискализируются. Вернуть — в сервисном режиме.
+    </div>
+  );
+}
 
 function useWallClock(): string {
   const [time, setTime] = useState(() => new Date());
@@ -91,6 +114,8 @@ export function AppShell({
           </button>
         </div>
       </header>
+
+      <FiscalPortBanner />
 
       <main className="relative min-h-0 flex-1 overflow-hidden bg-slate-900 border-slate-700/50 border-l border-r">
         {children}

@@ -135,11 +135,56 @@ CREATE TABLE IF NOT EXISTS terminals (
     -- своего же чекового принтера.
     receipt_printer_host TEXT,
     receipt_printer_port INT,
+
+    /*
+     * Фискальный регистратор.
+     *
+     * Живёт на терминале, а не на узле: ФР подключён к конкретной кассе
+     * по COM-порту физически. Узлу он нужен по двум причинам — Z-отчёт должен
+     * знать, на чём пробит, а вопрос «почему за смену нет фискальных
+     * признаков» задают потом, когда касса уже выключена, и ответить на него
+     * можно только из БД узла.
+     */
+    fiscal_model TEXT CHECK (fiscal_model IN ('atol', 'shtrih', 'virtual')),
+    -- «COM3». У виртуального ФР порта нет.
+    fiscal_port TEXT,
+    fiscal_baud_rate INT,
+    /*
+     * Держит ли касса COM-порт прямо сейчас.
+     *
+     * Порт занимает ровно один процесс: пока его держит касса, утилита
+     * производителя (ДТО Атол, тест Штрих-М) открыть его не сможет — а она
+     * нужна для прошивки, фискализации и диагностики. Отсюда возможность
+     * отпустить порт из сервисного режима.
+     *
+     * Состояние хранится, потому что забывается: отпустили под утилиту,
+     * ушли, а обнаруживает это кассир, когда гость уже стоит с деньгами.
+     */
+    fiscal_is_connected BOOLEAN NOT NULL DEFAULT TRUE,
+    fiscal_released_at TIMESTAMPTZ,
+    -- Отпускает порт вендорский инженер, а он не сотрудник арендатора
+    -- и в `staff` его нет. Ссылка на `service_accounts` навешивается ниже:
+    -- та таблица объявлена после этой.
+    fiscal_released_by UUID,
+
     attributes JSONB NOT NULL DEFAULT '{}',
     revision BIGINT NOT NULL DEFAULT nextval('revision_seq'),
-    deleted BOOLEAN NOT NULL DEFAULT FALSE
+    deleted BOOLEAN NOT NULL DEFAULT FALSE,
+
+    -- У виртуального ФР порта не бывает: адрес, который никуда не ведёт,
+    -- потом ищут часами.
+    CONSTRAINT chk_virtual_fiscal_has_no_port
+        CHECK (fiscal_model IS DISTINCT FROM 'virtual' OR fiscal_port IS NULL),
+    -- Отпущенный порт обязан помнить, когда и кем: иначе «почему смена
+    -- не фискализирована» остаётся без ответа.
+    CONSTRAINT chk_released_port_has_trace
+        CHECK (fiscal_is_connected OR fiscal_released_at IS NOT NULL)
 );
 CREATE INDEX IF NOT EXISTS idx_terminals_venue ON terminals(venue_id);
+-- «Какие кассы сейчас без фискального регистратора» — вопрос дежурный,
+-- и отвечать на него перебором всех терминалов не нужно.
+CREATE INDEX IF NOT EXISTS idx_terminals_fiscal_released
+    ON terminals(venue_id) WHERE NOT fiscal_is_connected;
 
 CREATE TABLE IF NOT EXISTS staff (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -164,6 +209,13 @@ CREATE TABLE IF NOT EXISTS service_accounts (
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Отложенная ссылка: `terminals` объявлены выше, а отпускает COM-порт
+-- фискального регистратора именно вендорский инженер.
+ALTER TABLE terminals DROP CONSTRAINT IF EXISTS fk_terminals_fiscal_released_by;
+ALTER TABLE terminals
+    ADD CONSTRAINT fk_terminals_fiscal_released_by
+    FOREIGN KEY (fiscal_released_by) REFERENCES service_accounts(id);
 
 -- ── Смены: их ТРИ, и они независимы ─────────────────────────────────────────
 --
