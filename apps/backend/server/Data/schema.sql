@@ -872,8 +872,9 @@ BEGIN
 END $$;
 
 -- ── Сид тарифов ─────────────────────────────────────────────────────────────
--- Start — базовый; Standard — +склад/KDS/отчёты/доставка;
--- Pro — +ЕГАИС/лояльность/аналитика/поставщики/мультиточка.
+
+-- Временно отключаем триггер генерации ревизий для сидинга
+SET session_replication_role = 'replica';
 
 INSERT INTO plans (code, name, price_monthly, max_terminals, max_venues, max_staff) VALUES
     ('start',    'Start',    0,    2,  1,  3),
@@ -899,4 +900,54 @@ JOIN (VALUES
     ('pro', 'suppliers'),
     ('pro', 'multi_venue')
 ) AS f(plan_code, code) ON f.plan_code = p.code
-ON CONFLICT DO NOTHING;
+ON CONFLICT (plan_id, feature_code) DO NOTHING;
+
+-- ── Тестовое окружение (Dev / Test Seed) ────────────────────────────────────
+
+-- 1. Организация
+INSERT INTO organizations (id, name) 
+VALUES ('11111111-1111-1111-1111-111111111111', 'Test Resto')
+ON CONFLICT (id) DO NOTHING;
+
+-- 2. Подписка
+INSERT INTO subscriptions (id, organization_id, plan_id, status, current_period_end) 
+SELECT 
+    '22222222-2222-2222-2222-222222222222',
+    '11111111-1111-1111-1111-111111111111', 
+    id, 
+    'active', 
+    NOW() + INTERVAL '1 year'
+FROM plans 
+WHERE code = 'pro'
+ON CONFLICT (id) DO NOTHING;
+
+-- 3. Заведение (Venue)
+INSERT INTO venues (id, organization_id, name, service_mode) 
+VALUES ('33333333-3333-3333-3333-333333333333', '11111111-1111-1111-1111-111111111111', 'Main Branch', 'tables')
+ON CONFLICT (id) DO NOTHING;
+
+-- 4. Терминал (POS)
+INSERT INTO terminals (id, venue_id, kind, label) 
+VALUES ('44444444-4444-4444-4444-444444444444', '33333333-3333-3333-3333-333333333333', 'pos', 'Terminal #1')
+ON CONFLICT (id) DO NOTHING;
+
+-- 5. Сотрудник (PIN "1234", SHA-256)
+INSERT INTO staff (id, organization_id, full_name, role, pin_code_hash) 
+VALUES ('00000000-0000-0000-0000-000000000001', '11111111-1111-1111-1111-111111111111', 'Иванов Менеджер', 'manager', '03AC674216F3E15C761EE1A5E255F067953623C8B388B4459E13F978D7C846F4')
+ON CONFLICT (id) DO NOTHING;
+
+-- 6. Открытая кассовая смена
+INSERT INTO cash_shifts (id, venue_id, terminal_id, number, status, opened_by, opened_at) 
+VALUES (
+    '55555555-5555-5555-5555-555555555555', 
+    '33333333-3333-3333-3333-333333333333', 
+    '44444444-4444-4444-4444-444444444444', 
+    1, 
+    'open', 
+    '00000000-0000-0000-0000-000000000001', 
+    NOW()
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Возвращаем триггеры в обычный режим
+SET session_replication_role = 'origin';
