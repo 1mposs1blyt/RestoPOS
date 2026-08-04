@@ -98,10 +98,29 @@ describe("право сотрудника", () => {
     expect(workRoutes(scope({ kind: "kds" }))).toEqual([]);
   });
 
-  it("тех. поддержке доступен только сервисный экран", () => {
-    expect(routesFor(scope({ permissions: permissionsOf("support") }))).toEqual([
-      "service",
-    ]);
+  /*
+   * У вендорского инженера ровно одно право `terminal.service`, и проверять
+   * надо не длину списка, а суть: ни заказов, ни денег он не видит. Инженер
+   * с правом сторно в чужой кассе — это дыра, а не удобство.
+   */
+  it("тех. поддержке доступен только сервисный режим", () => {
+    const support = routesFor(scope({ permissions: permissionsOf("support") }));
+
+    expect(support).toContain("service");
+    expect(support).toContain("devices");
+    for (const forbidden of [
+      "hall",
+      "order",
+      "counter",
+      "payment",
+      "cash",
+      "reports",
+      "documents",
+      "audit",
+      "personal",
+    ]) {
+      expect(support).not.toContain(forbidden);
+    }
   });
 
   it("сервисный экран доступен на терминале любого типа", () => {

@@ -19,7 +19,7 @@ import { PrintingProvider } from "./state/printing";
 import { DeliveryProvider } from "./state/delivery";
 import { GuestsProvider } from "./state/guests";
 import { ShiftsProvider } from "./state/shifts";
-import { TerminalProvider } from "./state/terminal";
+import { DevicesProvider } from "./state/devices";
 import { StopListProvider } from "./state/stoplist";
 import { StationsProvider } from "./state/stations";
 import { TablesProvider } from "./state/tables";
@@ -29,6 +29,7 @@ import { AuditScreen } from "./screens/auditscreen";
 import { CashScreen } from "./screens/cashscreen";
 import { CounterScreen } from "./screens/counterscreen";
 import { DeliveryScreen } from "./screens/deliveryscreen";
+import { DevicesScreen } from "./screens/devicesscreen";
 import { DocumentsScreen } from "./screens/documentsscreen";
 import { PaymentScreen } from "./screens/paymentscreen";
 import { GuestsScreen } from "./screens/guestsscreen";
@@ -109,7 +110,7 @@ function Terminal() {
           позиция и надо ли считать её готовой сразу (станция без экрана). */}
       {/* Оборудование выше всего: отпущенный COM-порт ФР показывает оболочка
           на каждом экране, а денежный ящик и чековый принтер нужны кассе. */}
-      <TerminalProvider>
+      <DevicesProvider>
         <StationsProvider>
         {/* Смены выше заказов: заказ закрывается в кассовую смену, и её номер
             попадает в чек. Обратный порядок означал бы, что чек уже создан,
@@ -147,7 +148,7 @@ function Terminal() {
           </StopListProvider>
           </ShiftsProvider>
         </StationsProvider>
-      </TerminalProvider>
+      </DevicesProvider>
     </AccessProvider>
   );
 }
@@ -238,6 +239,9 @@ function CurrentScreen({ scope }: { scope: AccessScope }) {
           <DeliveryScreen />
         </FeatureGate>
       );
+
+    case "devices":
+      return <DevicesScreen />;
 
     case "service":
       return <ServiceScreen />;

@@ -8,7 +8,7 @@ import { useShifts } from "../state/shifts";
 import { cashShiftTotals } from "../lib/cash-totals";
 import { formatMoney, fromMinor, ZERO_MONEY } from "../lib/money";
 import { openCashDrawer } from "../lib/printer";
-import { useTerminal } from "../state/terminal";
+import { useDevices } from "../state/devices";
 
 /**
  * Кассовая смена и денежный ящик.
@@ -27,7 +27,7 @@ export function CashScreen() {
   const { cashShift, openCashShift, closeCashShift, recordCash, state } =
     useShifts();
   const { state: orders } = useOrders();
-  const { receiptPrinter } = useTerminal();
+  const { drawerDevice } = useDevices();
 
   const [dialog, setDialog] = useState<CashOperationKind | null>(null);
   const [floatDraft, setFloatDraft] = useState("5000.00");
@@ -136,14 +136,19 @@ export function CashScreen() {
               label="Открыть денежный ящик"
               disabled={!can("cash.drawer")}
               onClick={() => {
-                const printer = receiptPrinter;
-                if (!printer) {
+                /*
+                 * Ящик открывает устройство, у которого он включён: физически
+                 * он подключён шлейфом к чековому принтеру или ККМ и
+                 * открывается их же командой. Отдельного «драйвера ящика»
+                 * не существует.
+                 */
+                if (!drawerDevice) {
                   setNotice(
-                    "Чековый принтер не настроен — ящик открывается его командой",
+                    "Нет запущенного устройства с денежным ящиком — проверьте настройку оборудования",
                   );
                   return;
                 }
-                openCashDrawer(printer.host, printer.port).catch(
+                openCashDrawer(drawerDevice.port, 9100).catch(
                   (error: unknown) =>
                     setNotice(
                       error instanceof Error ? error.message : "Ящик не открылся",
