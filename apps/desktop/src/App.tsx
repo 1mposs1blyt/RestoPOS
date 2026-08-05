@@ -14,6 +14,7 @@ import {
 } from "./app/navigation";
 import { SessionProvider, roleLabel, useSession } from "./app/session";
 import { AppShell } from "./layout/AppShell";
+import { CheckoutProvider } from "./state/checkout";
 import { OrdersProvider } from "./state/orders";
 import { PrintingProvider } from "./state/printing";
 import { DeliveryProvider } from "./state/delivery";
@@ -131,17 +132,22 @@ function Terminal() {
                 waiterId={staff.id}
               >
                 <PrintingProvider>
-                  {/* Доставка ниже заказов: она надстройка над ними — позиции
-                      и деньги живут в заказе, здесь только адрес, курьер и срок. */}
-                  <DeliveryProvider venueId={venue.id}>
-                    <GuestsProvider>
-                      <NavigationProvider initialRoute={initialRoute}>
-                        <AppShell scope={scope}>
-                          <CurrentScreen scope={scope} />
-                        </AppShell>
-                      </NavigationProvider>
-                    </GuestsProvider>
-                  </DeliveryProvider>
+                  {/* Расчёт ниже заказов и оборудования: он держит порядок
+                      «эквайринг → фискальный чек → заказ оплачен» и знает
+                      обоих — и ККМ из оборудования, и заказ. */}
+                  <CheckoutProvider>
+                    {/* Доставка ниже заказов: она надстройка над ними — позиции
+                        и деньги живут в заказе, здесь только адрес, курьер и срок. */}
+                    <DeliveryProvider venueId={venue.id}>
+                      <GuestsProvider>
+                        <NavigationProvider initialRoute={initialRoute}>
+                          <AppShell scope={scope}>
+                            <CurrentScreen scope={scope} />
+                          </AppShell>
+                        </NavigationProvider>
+                      </GuestsProvider>
+                    </DeliveryProvider>
+                  </CheckoutProvider>
                 </PrintingProvider>
               </OrdersProvider>
             </TablesProvider>

@@ -138,6 +138,15 @@ export interface PaymentDraft {
   amount: Money;
   /** Сколько дал гость наличными — для сдачи. `null` для безналичных. */
   tendered: Money | null;
+  /**
+   * Результат эквайринга, если строка платилась картой. Заполняет
+   * `state/checkout.tsx` после ответа терминала — экран оплаты этих полей
+   * не знает и знать не должен.
+   */
+  authCode?: string | null;
+  rrn?: string | null;
+  /** Фискальный признак чека, которым закрыт заказ. */
+  fiscalSign?: string | null;
 }
 
 const OrdersContext = createContext<OrdersValue | null>(null);
@@ -168,6 +177,11 @@ function toPayment(
     tendered: draft.tendered,
     staffId,
     refundOf: null,
+    // Реквизиты банка и ККТ приезжают снимком, как род и название типа:
+    // закрытый чек — финансовый документ, и пересчитывать его нечем.
+    authCode: draft.authCode ?? null,
+    rrn: draft.rrn ?? null,
+    fiscalSign: draft.fiscalSign ?? null,
     paidAt: new Date().toISOString(),
     clientId: newId(),
   };

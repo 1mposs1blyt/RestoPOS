@@ -10,6 +10,8 @@ import {
   type RouteName,
 } from "../app/navigation";
 import { roleLabel, useSession } from "../app/session";
+import { acquiringSimulate } from "../lib/acquiring";
+import { fiscalSimulate } from "../lib/fiscal";
 
 const TERMINAL_LABELS: Record<TerminalKind, string> = {
   pos: "Касса",
@@ -238,7 +240,70 @@ function DevBar() {
           </DevButton>
         ))}
       </DevGroup>
+
+      <FailureScenarios />
     </div>
+  );
+}
+
+/**
+ * Сценарии отказов ККТ и эквайринга.
+ *
+ * Взводится ровно один следующий вызов устройства, после чего сценарий
+ * сбрасывается сам. Иначе кнопку пришлось бы выключать вручную, и забытый
+ * «теряй ответ» превратил бы всю дальнейшую отладку в загадку.
+ *
+ * Ветки «неизвестно» иначе видны только из `cargo test`. Увидеть их глазами
+ * на экране кассы — отдельная ценность: там решает не программа, а кассир,
+ * и текст сообщения должен быть понятен ему, а не автору кода.
+ */
+function FailureScenarios() {
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const arm = (label: string, action: () => Promise<void>) => async () => {
+    try {
+      await action();
+      setNotice(`Взведено: ${label}`);
+    } catch (error) {
+      // В браузере моста нет вовсе — это не поломка, а нормальный ответ.
+      setNotice(error instanceof Error ? error.message : "Не вышло");
+    }
+  };
+
+  return (
+    <DevGroup label={notice ?? "Отказы"}>
+      <DevButton onClick={arm("обрыв после чека", () => fiscalSimulate("lost_reply_after"))}>
+        ККТ: обрыв после
+      </DevButton>
+      <DevButton onClick={arm("обрыв до чека", () => fiscalSimulate("lost_reply_before"))}>
+        ККТ: обрыв до
+      </DevButton>
+      <DevButton
+        onClick={arm("кабель ККТ", () => fiscalSimulate("lost_reply_then_disconnect"))}
+      >
+        ККТ: кабель
+      </DevButton>
+      <DevButton onClick={arm("смена сутки", () => fiscalSimulate("age_shift"))}>
+        ККТ: сутки
+      </DevButton>
+      <DevButton onClick={arm("отказ банка", () => acquiringSimulate("declined"))}>
+        Карта: отказ
+      </DevButton>
+      <DevButton
+        onClick={arm("обрыв после списания", () =>
+          acquiringSimulate("unknown_after_approve"),
+        )}
+      >
+        Карта: обрыв после
+      </DevButton>
+      <DevButton
+        onClick={arm("кабель терминала", () =>
+          acquiringSimulate("unknown_then_disconnect"),
+        )}
+      >
+        Карта: кабель
+      </DevButton>
+    </DevGroup>
   );
 }
 
@@ -258,7 +323,12 @@ function DevButton({
   onClick,
   children,
 }: {
-  active: boolean;
+  /**
+   * Подсвечена ли кнопка. Необязательна: у переключателей (терминал, тариф)
+   * состояние есть, а у разовых действий вроде сценариев отказа его нет —
+   * они срабатывают и гаснут.
+   */
+  active?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {

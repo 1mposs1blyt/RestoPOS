@@ -3,10 +3,17 @@ import type { CashOperationKind } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
+import { useSession } from "../app/session";
 import { useOrders } from "../state/orders";
 import { useShifts } from "../state/shifts";
 import { cashShiftTotals } from "../lib/cash-totals";
-import { formatMoney, fromMinor, ZERO_MONEY } from "../lib/money";
+import { formatMoney, fromMinor, toMinor, ZERO_MONEY } from "../lib/money";
+import {
+  fiscalCloseShift,
+  fiscalOpenShift,
+  fiscalXReport,
+  type ZReport,
+} from "../lib/fiscal";
 import { openCashDrawer } from "../lib/printer";
 import { useDevices } from "../state/devices";
 
@@ -27,11 +34,93 @@ export function CashScreen() {
   const { cashShift, openCashShift, closeCashShift, recordCash, state } =
     useShifts();
   const { state: orders } = useOrders();
-  const { drawerDevice } = useDevices();
+  const { drawerDevice, kkm } = useDevices();
+  const { staff } = useSession();
 
   const [dialog, setDialog] = useState<CashOperationKind | null>(null);
   const [floatDraft, setFloatDraft] = useState("5000.00");
   const [notice, setNotice] = useState<string | null>(null);
+  /** Последний отчёт ККТ. Показывается рядом со сводом кассы для сверки. */
+  const [zReport, setZReport] = useState<ZReport | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  /**
+   * ККМ не заведена — работаем без фискализации, как и на экране оплаты
+   * (`state/checkout.tsx`). Отчёты тогда чисто кассовые: сверять их не с чем.
+   */
+  const isNonFiscal = kkm === undefined;
+
+  const handleXReport = async () => {
+    if (isNonFiscal) {
+      setNotice("ККМ не заведена — X-отчёт печатать нечем");
+      return;
+    }
+    setBusy(true);
+    try {
+      setZReport(await fiscalXReport());
+      setNotice(null);
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "X-отчёт не снялся");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Z-отчёт закрывает смену **сначала в ККТ, потом у нас**.
+   *
+   * Обратный порядок означал бы кассовую смену, закрытую в интерфейсе,
+   * при открытой смене в фискальном регистраторе: следующий чек уехал бы
+   * в старую смену ККТ, и Z-отчёт следующего дня не сошёлся бы ни с чем.
+   * Не закрылась ККТ — не закрываем и мы.
+   */
+  const handleCloseShift = async () => {
+    if (isNonFiscal) {
+      closeCashShift();
+      return;
+    }
+    setBusy(true);
+    try {
+      setZReport(await fiscalCloseShift(staff?.fullName ?? "—"));
+      closeCashShift();
+      setNotice(null);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `Смена в ККТ не закрыта: ${error.message}`
+          : "Смена в ККТ не закрыта",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /**
+   * Открытие смены — тем же порядком, зеркально: сначала ККТ.
+   *
+   * Кассовая смена без открытой смены в ККТ — это заказы, которые нельзя
+   * пробить: касса будет молча принимать оплату и отказывать на чеке.
+   */
+  const handleOpenShift = async () => {
+    if (isNonFiscal) {
+      openCashShift(floatDraft);
+      return;
+    }
+    setBusy(true);
+    try {
+      await fiscalOpenShift(staff?.fullName ?? "—");
+      openCashShift(floatDraft);
+      setNotice(null);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `Смена в ККТ не открыта: ${error.message}`
+          : "Смена в ККТ не открыта",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const totals = useMemo(() => {
     if (!cashShift) return null;
@@ -53,11 +142,12 @@ export function CashScreen() {
   if (!cashShift) {
     return (
       <ClosedShift
-        canOpen={can("shift.open")}
+        canOpen={can("shift.open") && !busy}
         value={floatDraft}
         onChange={setFloatDraft}
-        onOpen={() => openCashShift(floatDraft)}
+        onOpen={handleOpenShift}
         onBack={back}
+        notice={notice}
       />
     );
   }
@@ -158,16 +248,53 @@ export function CashScreen() {
             />
             <Action
               label="Печать X-отчёта"
-              disabled={!can("report.x")}
-              onClick={() => window.print()}
+              disabled={!can("report.x") || busy}
+              onClick={handleXReport}
             />
             <Action
               label="Закрыть смену (Z-отчёт)"
               tone="danger"
-              disabled={!can("shift.close")}
-              onClick={closeCashShift}
+              disabled={!can("shift.close") || busy}
+              onClick={handleCloseShift}
             />
           </div>
+
+          {/* Свод ККТ рядом со сводом кассы. Смотреть их порознь бессмысленно:
+              вопрос всегда один — сходится ли наличность в ящике с тем,
+              что видел фискальный регистратор. */}
+          {zReport && (
+            <dl className="shrink-0 divide-y divide-slate-900 border-t border-slate-800 bg-slate-950/60">
+              <SumRow
+                label={`ККТ, смена №${zReport.shiftNumber} · чеков`}
+                value={String(zReport.receipts)}
+              />
+              <SumRow
+                label="Наличными по ККТ"
+                value={formatMoney(fromMinor(zReport.cashTotal))}
+              />
+              <SumRow
+                label="Безналом по ККТ"
+                value={formatMoney(fromMinor(zReport.cashlessTotal))}
+              />
+              {zReport.refundsTotal > 0 && (
+                <SumRow
+                  label="Возвраты по ККТ"
+                  value={formatMoney(fromMinor(zReport.refundsTotal))}
+                />
+              )}
+              <SumRow
+                label="Расхождение с ящиком"
+                value={formatMoney(
+                  fromMinor(
+                    toMinor(totals?.expectedCash ?? ZERO_MONEY) -
+                      zReport.cashTotal -
+                      toMinor(cashShift.openingFloat),
+                  ),
+                )}
+                strong
+              />
+            </dl>
+          )}
 
           <h2 className="shrink-0 border-t border-slate-800 px-5 py-3 text-xs uppercase tracking-wider text-slate-600">
             Движения по ящику
@@ -246,12 +373,15 @@ function ClosedShift({
   onChange,
   onOpen,
   onBack,
+  notice,
 }: {
   canOpen: boolean;
   value: string;
   onChange: (next: string) => void;
   onOpen: () => void;
   onBack: () => void;
+  /** Почему смена не открылась. Чаще всего — молчащая ККТ. */
+  notice: string | null;
 }) {
   return (
     <div className="flex h-full w-full select-none items-center justify-center p-8">
@@ -263,6 +393,11 @@ function ClosedShift({
           Пока смена не открыта, чек не к чему привязать: у него не будет
           ни номера смены, ни места в Z-отчёте.
         </p>
+        {notice && (
+          <p className="rounded-lg bg-amber-950/40 px-3 py-2 text-sm text-amber-300">
+            {notice}
+          </p>
+        )}
         <label className="block text-left">
           <span className="text-xs uppercase tracking-wider text-slate-600">
             Разменный фонд

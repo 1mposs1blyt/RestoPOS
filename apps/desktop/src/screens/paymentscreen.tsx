@@ -7,7 +7,9 @@ import { useSession } from "../app/session";
 import { DISCOUNT_TYPES } from "../data/discount-types";
 import { PAYMENT_TYPES, findPaymentType } from "../data/payment-types";
 import { findMenuItem } from "../state/menu";
+import { useCheckout } from "../state/checkout";
 import { useOrders, type PaymentDraft } from "../state/orders";
+import { CheckoutOverlay } from "./checkoutoverlay";
 import { useShifts } from "../state/shifts";
 import { useTables } from "../state/tables";
 import {
@@ -54,10 +56,10 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
     discountsOfOrder,
     applyDiscount,
     removeDiscount,
-    payOrder,
   } = useOrders();
   const { can, isPossible, authorize } = useAccess();
   const { tables } = useTables();
+  const { pay, isBusy, isNonFiscal } = useCheckout();
 
   const order = state.orders[orderId];
   const items = itemsOfOrder(orderId).filter((item) => item.status !== "voided");
@@ -171,8 +173,16 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
     if (activeId === id) setActiveId(null);
   };
 
-  const handlePay = () => {
-    if (!isSettled) return;
+  /**
+   * Расчёт целиком ведёт `state/checkout.tsx`: эквайринг, чек, закрытие
+   * заказа — в этом порядке. Экран отдаёт ему строки и ждёт исход.
+   *
+   * Уходим назад только по `done`. На отказе и на «требует человека» экран
+   * остаётся с набранными строками: кассир должен видеть, что именно он
+   * пробивал, а не гадать, восстанавливая сумму заново.
+   */
+  const handlePay = async () => {
+    if (!isSettled || isBusy) return;
     const drafts: PaymentDraft[] = lines
       .map<PaymentDraft>((line) => ({
         paymentTypeId: line.paymentTypeId,
@@ -185,8 +195,8 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
       // ввода, а не платёж. В чек её класть незачем.
       .filter((draft) => compareMoney(draft.amount, ZERO_MONEY) > 0);
 
-    payOrder(orderId, drafts);
-    back();
+    const result = await pay(orderId, drafts);
+    if (result.stage === "done") back();
   };
 
   if (!order) {
@@ -220,6 +230,15 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
         <p className="shrink-0 border-b border-amber-900/60 bg-amber-950/40 px-5 py-3 text-sm text-amber-300">
           Кассовая смена не открыта — чек не к чему привязать. Откройте смену
           на экране кассы.
+        </p>
+      )}
+
+      {isNonFiscal && (
+        // Молчать об этом нельзя: закрытый заказ без фискального документа
+        // выглядит на экране точно так же, как обычный, а по документам
+        // продажи не было.
+        <p className="shrink-0 border-b border-slate-700 bg-slate-800/60 px-5 py-3 text-sm text-slate-400">
+          ККМ не заведена — нефискальный режим. Заказ закроется без чека.
         </p>
       )}
 
@@ -452,11 +471,11 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
         <div className="flex-1" />
         <button
           type="button"
-          disabled={!isSettled || !cashShift}
+          disabled={!isSettled || !cashShift || isBusy}
           onClick={handlePay}
           className="min-h-16 min-w-64 bg-emerald-600 px-8 text-lg font-black tracking-wide text-white transition active:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600"
         >
-          Оплатить
+          {isBusy ? "Идёт расчёт…" : "Оплатить"}
         </button>
       </footer>
 
@@ -466,6 +485,8 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
           onCancel={() => setDiscountOpen(false)}
         />
       )}
+
+      <CheckoutOverlay />
     </div>
   );
 }

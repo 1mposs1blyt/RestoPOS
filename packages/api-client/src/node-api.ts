@@ -14,7 +14,6 @@ import type {
   Shift,
   Staff,
   StationOutput,
-  TableLayout,
   Terminal,
   UUID,
   Venue,
@@ -78,6 +77,38 @@ export interface MenuSnapshot {
 export interface StationsSnapshot {
   stations: PrepStation[];
   outputs: StationOutput[];
+}
+
+/**
+ * Стол так, как его отдаёт узел (`TableDto`).
+ *
+ * Отдельный тип, а не `TableLayout`: у узла форма стола ограничена схемой БД
+ * (`rect`/`circle`), и приводить одно к другому должен вызывающий, явно.
+ * Молчаливое приведение здесь означало бы, что круглый стол однажды
+ * приедет прямоугольным и никто не поймёт, где это случилось.
+ */
+export interface NodeTable {
+  id: UUID;
+  venueId: UUID;
+  label: string;
+  /** `tables.seats` — число мест, к геометрии отношения не имеет. */
+  capacity: number;
+  cx: number;
+  cy: number;
+  width: number;
+  height: number;
+  shape: "rect" | "circle";
+}
+
+/** Сводка активного заказа (`ActiveOrderSummaryDto`) — для занятости столов. */
+export interface NodeOrderSummary {
+  id: UUID;
+  tableId: UUID;
+  guestCount: number;
+  /** Узел пока отдаёт `0.00` константой: сумма по позициям не считается. */
+  totalAmount: number;
+  status: string;
+  createdAt: string;
 }
 
 // ── Смена и заказы ──────────────────────────────────────────────────────────
@@ -191,13 +222,49 @@ export class NodeApi {
     return this.http.get<StationsSnapshot>("/stations");
   }
 
-  tables(): Promise<TableLayout[]> {
-    return this.http.get<TableLayout[]>("/tables");
+  /**
+   * Стол в ответе узла.
+   *
+   * Форма отличается от `TableLayout`, и разницу держим здесь, а не
+   * подгоняем одно под другое:
+   * - `shape` в БД только `rect`/`circle` — квадрата как отдельного значения
+   *   нет, он выражается равными сторонами (`CHECK` в схеме);
+   * - `capacity` — это `tables.seats`, геометрии не касается;
+   * - `cx`/`cy` приходят как `NUMERIC`, то есть числом, а не строкой.
+   */
+  tables(venueId: UUID): Promise<NodeTable[]> {
+    return this.http.get<NodeTable[]>(`/api/v1/venues/${venueId}/tables`);
   }
 
-  /** Расстановка сохраняется целиком: это один документ, а не набор строк. */
-  saveTables(tables: TableLayout[]): Promise<TableLayout[]> {
-    return this.http.put<TableLayout[]>("/tables", tables);
+  /**
+   * Сохранение положения одного стола.
+   *
+   * Контракт из `docs/plan.md` описывал расстановку одним документом
+   * (`PUT /tables`), но узел сохраняет её построчно и меняет только геометрию:
+   * создания, удаления и переименования у него пока нет вовсе. Расхождение
+   * оставлено видимым намеренно — подписи «как в плане» на методе, который
+   * ходит в другой маршрут, дороже, чем честное имя.
+   */
+  updateTableLayout(
+    venueId: UUID,
+    tableId: UUID,
+    layout: { cx: number; cy: number; width: number; height: number },
+  ): Promise<void> {
+    return this.http.put<void>(
+      `/api/v1/venues/${venueId}/tables/${tableId}`,
+      layout,
+    );
+  }
+
+  /**
+   * Активные заказы заведения — сводками, а не снимками целиком: залу нужна
+   * занятость стола, а не состав счёта.
+   */
+  venueOrders(venueId: UUID, status?: string): Promise<NodeOrderSummary[]> {
+    return this.http.get<NodeOrderSummary[]>(
+      `/api/v1/venues/${venueId}/orders`,
+      status ? { params: { status } } : undefined,
+    );
   }
 
   // ── Смена ─────────────────────────────────────────────────────────────────

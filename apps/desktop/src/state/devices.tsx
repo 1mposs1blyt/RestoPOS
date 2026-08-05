@@ -9,6 +9,7 @@ import {
 } from "react";
 import type { UUID } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
+import type { TaxSystem, VatRate } from "../lib/fiscal";
 
 /**
  * Оборудование терминала.
@@ -57,6 +58,18 @@ export interface Device {
 
   // ── Настройки ККМ ──────────────────────────────────────────────────────
   cashRegisterNumber: number;
+  /**
+   * Система налогообложения и ставка НДС по умолчанию.
+   *
+   * Живут здесь, а не в меню, по двум причинам. Во-первых, в `MenuItem`
+   * ставки нет вовсе, а фискальному чеку она обязательна. Во-вторых, у общепита
+   * ставка обычно одна на всё заведение — заводить её в каждое блюдо значит
+   * тысячу раз повторить одно и то же и однажды ошибиться в одном месте.
+   * Когда появятся блюда с разной ставкой (алкоголь на ОСН), поле в меню
+   * добавится и будет перекрывать это значение.
+   */
+  taxSystem: TaxSystem;
+  defaultVat: VatRate;
   /** Открывать денежный ящик этим устройством. */
   cashDrawer: boolean;
   /** Не давать работать, пока ящик открыт: деньги на виду — риск и соблазн. */
@@ -83,6 +96,8 @@ export function makeDevice(kind: DeviceKind, model: string): Device {
     port: kind === "printer" ? "192.168.1.100" : "1",
     baudRate: 115200,
     cashRegisterNumber: 1,
+    taxSystem: "usn_income",
+    defaultVat: "vat20",
     cashDrawer: kind === "kkm",
     blockWhenDrawerOpen: false,
     printDishes: true,
