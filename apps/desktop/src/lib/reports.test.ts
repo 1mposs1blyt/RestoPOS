@@ -305,6 +305,68 @@ describe("согласованность отчётов при скидке", ()
   });
 });
 
+/*
+ * Тот же класс расхождения, но от возврата, а не от скидки: отчёт по платежам
+ * (011) вычитает встречную строку, а отчёты по позициям (013, 046) считали
+ * по составу заказа и продолжали показывать выручку, которой уже нет.
+ * Управляющий при сверке видит две разные суммы, и обе выглядят правдоподобно.
+ */
+describe("согласованность отчётов при возврате", () => {
+  const sale = payment({ id: "p1", kind: "cash", amount: "420.00" });
+  const returned = context({
+    orders: [order({ id: "o1" })],
+    items: [item({ id: "i1" })],
+    payments: [
+      sale,
+      payment({ id: "r1", kind: "cash", amount: "420.00", refundOf: "p1" }),
+    ],
+  });
+
+  it("выручка по официантам вычитает возвращённый чек", () => {
+    expect(run("013", returned).footer?.amount).toBe("0.00");
+  });
+
+  it("реестр счетов показывает возврат, а не полученные деньги", () => {
+    const table = run("046", returned);
+    expect(table.footer?.amount).toBe("0.00");
+    // Ноль в строке обязан быть объяснён: иначе он читается как чек на нулевую
+    // сумму, то есть как ошибка кассы.
+    expect(table.rows[0].receipt).toContain("возврат");
+  });
+
+  it("все денежные отчёты сходятся между собой", () => {
+    expect(run("013", returned).footer?.amount).toBe(
+      run("011", returned).footer?.amount,
+    );
+    expect(run("046", returned).footer?.amount).toBe(
+      run("011", returned).footer?.amount,
+    );
+  });
+
+  it("возвращённый чек не идёт в расход блюд", () => {
+    // Еду вернули вместе с деньгами: считать её проданной — завысить расход
+    // и заказать назавтра лишнее.
+    expect(run("023", returned).rows).toHaveLength(0);
+  });
+
+  it("частичного возврата не бывает, но пересчёт от него не ломается", () => {
+    // Возврат по чеку целиком — единственный сценарий кассы, однако отчёт
+    // не должен уходить в минус, если строка возврата пришла с узла одна.
+    const partial = context({
+      orders: [order({ id: "o1" })],
+      items: [item({ id: "i1", quantity: 2 })],
+      payments: [
+        payment({ id: "p1", kind: "cash", amount: "500.00" }),
+        payment({ id: "p2", kind: "card", amount: "340.00" }),
+        payment({ id: "r1", kind: "card", amount: "340.00", refundOf: "p2" }),
+      ],
+    });
+
+    expect(run("013", partial).footer?.amount).toBe("500.00");
+    expect(run("046", partial).footer?.amount).toBe("500.00");
+  });
+});
+
 describe("036 скидки и надбавки", () => {
   it("разводит скидки и надбавки по разным колонкам", () => {
     const table = run(

@@ -27,6 +27,7 @@ export type Route =
   | { name: "order"; tableId: UUID }
   | { name: "counter" }
   | { name: "payment"; orderId: UUID }
+  | { name: "refund" }
   | { name: "cash" }
   | { name: "kitchen" }
   | { name: "stations" }
@@ -111,6 +112,22 @@ const ROUTE_SPECS: Record<RouteName, RouteSpec> = {
     terminals: ["pos", "admin"],
     serviceModes: null,
     permission: "payment.accept",
+    accessory: true,
+  },
+  /*
+   * Возврат по чеку. Сопутствующий: возвраты случаются несколько раз в день,
+   * и ради них одних за кассу не встают — работа кассира это зал или прилавок
+   * и смена. Режим обслуживания не важен: чек возвращают и на прилавке.
+   *
+   * Право то же, что и на само действие: экран видят кассир и менеджер.
+   * Само действие всё равно проходит через `authorize` — не ради второго
+   * гейта, а ради записи в журнал опасных операций: возврат разбирают
+   * при недостаче первым.
+   */
+  refund: {
+    terminals: ["pos", "admin"],
+    serviceModes: null,
+    permission: "payment.refund",
     accessory: true,
   },
   // Кассовая смена и движения по ящику. Режим обслуживания не важен: ящик

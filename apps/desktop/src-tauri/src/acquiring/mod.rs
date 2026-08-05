@@ -153,7 +153,37 @@ pub fn pay_with_recovery(
     terminal: &mut dyn PaymentTerminal,
     request: &PaymentRequest,
 ) -> PaymentOutcome {
-    match terminal.pay(request) {
+    with_recovery(terminal, request, OperationKind::Payment)
+}
+
+/// Возврат по карте с разбором неизвестного исхода.
+///
+/// Автомат тот же, что у оплаты, и это не экономия на копипасте, а решение.
+/// Неизвестный исход возврата опасен ровно так же, только в другую сторону:
+/// деньги могли уйти гостю, а встречной строки в кассе нет — и разбирать это
+/// придётся по выписке банка за день, как и списание без чека.
+///
+/// Отмена (reversal) посылается на том же условии: терминал ответил и операции
+/// не знает либо не ответил вовсе. Отменять возврат, о котором терминал знает,
+/// нельзя — он состоялся, и касса обязана его записать.
+pub fn refund_with_recovery(
+    terminal: &mut dyn PaymentTerminal,
+    request: &PaymentRequest,
+) -> PaymentOutcome {
+    with_recovery(terminal, request, OperationKind::Refund)
+}
+
+fn with_recovery(
+    terminal: &mut dyn PaymentTerminal,
+    request: &PaymentRequest,
+    kind: OperationKind,
+) -> PaymentOutcome {
+    let started = match kind {
+        OperationKind::Payment => terminal.pay(request),
+        OperationKind::Refund => terminal.refund(request),
+    };
+
+    match started {
         Ok(authorization) => PaymentOutcome::Approved {
             authorization,
             recovered: false,
@@ -298,6 +328,59 @@ mod tests {
         // Отменять нечего — команда до терминала не дошла.
         assert!(!reversed);
         assert_eq!(terminal.approved_count(), 0);
+    }
+
+    #[test]
+    fn обычный_возврат_проходит() {
+        let mut terminal = Emulator::new();
+        let outcome = refund_with_recovery(&mut terminal, &запрос("r-1"));
+
+        let PaymentOutcome::Approved { authorization, .. } = outcome else {
+            panic!("ожидалось одобрение возврата: {outcome:?}");
+        };
+        assert_eq!(authorization.kind, OperationKind::Refund);
+    }
+
+    #[test]
+    fn обрыв_после_возврата_не_приводит_ко_второму_возврату() {
+        // Деньги гостю уже ушли. Повторить — отдать их дважды, отменить —
+        // забрать обратно те, что он уже видит на карте.
+        let mut terminal = Emulator::new();
+        terminal.fail_next_reply_after_approving();
+
+        let outcome = refund_with_recovery(&mut terminal, &запрос("r-42"));
+        let PaymentOutcome::Approved { authorization, recovered } = outcome else {
+            panic!("возврат состоялся, это успех: {outcome:?}");
+        };
+        assert!(recovered);
+        assert_eq!(authorization.kind, OperationKind::Refund);
+        assert_eq!(terminal.approved_count(), 1);
+        assert_eq!(terminal.reversal_count(), 0);
+    }
+
+    #[test]
+    fn обрыв_до_возврата_гасится_отменой() {
+        let mut terminal = Emulator::new();
+        terminal.fail_next_reply_before_approving();
+
+        let outcome = refund_with_recovery(&mut terminal, &запрос("r-7"));
+        let PaymentOutcome::Declined { reversed, .. } = outcome else {
+            panic!("возврата не было, ожидался отказ: {outcome:?}");
+        };
+        assert!(reversed, "неизвестный возврат обязаны были отменить");
+        assert_eq!(terminal.approved_count(), 0);
+    }
+
+    #[test]
+    fn неудавшаяся_отмена_возврата_требует_человека() {
+        let mut terminal = Emulator::new();
+        terminal.fail_next_reply_then_disconnect();
+
+        let outcome = refund_with_recovery(&mut terminal, &запрос("r-9"));
+        assert!(
+            matches!(outcome, PaymentOutcome::NeedsAttention { .. }),
+            "исход возврата неизвестен, решает человек: {outcome:?}"
+        );
     }
 
     #[test]

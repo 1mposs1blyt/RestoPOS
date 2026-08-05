@@ -33,6 +33,7 @@ import { DeliveryScreen } from "./screens/deliveryscreen";
 import { DevicesScreen } from "./screens/devicesscreen";
 import { DocumentsScreen } from "./screens/documentsscreen";
 import { PaymentScreen } from "./screens/paymentscreen";
+import { RefundScreen } from "./screens/refundscreen";
 import { GuestsScreen } from "./screens/guestsscreen";
 import { KitchenScreen } from "./screens/kitchenscreen";
 import { MainMenuScreen } from "./screens/mainmenuscreen";
@@ -200,6 +201,9 @@ function CurrentScreen({ scope }: { scope: AccessScope }) {
 
     case "payment":
       return <PaymentScreen orderId={route.orderId} />;
+
+    case "refund":
+      return <RefundScreen />;
 
     case "cash":
       return <CashScreen />;

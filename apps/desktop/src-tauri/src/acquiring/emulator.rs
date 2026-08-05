@@ -76,6 +76,38 @@ impl Emulator {
         self.operations.push(authorization.clone());
         authorization
     }
+
+    /// Операция под сценарием отказа. Одна на оплату и возврат: разница между
+    /// ними в направлении денег, а не в том, как рвётся связь.
+    fn perform(
+        &mut self,
+        request: &PaymentRequest,
+        kind: OperationKind,
+    ) -> TerminalResult<Authorization> {
+        self.ensure_connected()?;
+
+        match std::mem::replace(&mut self.next_failure, NextFailure::None) {
+            NextFailure::None => Ok(self.approve(request, kind)),
+
+            NextFailure::Declined(reason) => Err(TerminalError::Declined(reason.into())),
+
+            NextFailure::ReplyLostAfterApproving => {
+                // Порядок важен: банк одобрил, и только потом пропал ответ.
+                self.approve(request, kind);
+                Err(TerminalError::Unknown("ответ терминала не получен".into()))
+            }
+
+            NextFailure::ReplyLostBeforeApproving => {
+                Err(TerminalError::Unknown("ответ терминала не получен".into()))
+            }
+
+            NextFailure::ReplyLostThenDisconnected => {
+                self.approve(request, kind);
+                self.connected = false;
+                Err(TerminalError::Unknown("связь оборвана при ответе".into()))
+            }
+        }
+    }
 }
 
 /// Управление сценарием отказа. Отдельным блоком под условием сборки:
@@ -130,34 +162,14 @@ impl PaymentTerminal for Emulator {
     }
 
     fn pay(&mut self, request: &PaymentRequest) -> TerminalResult<Authorization> {
-        self.ensure_connected()?;
-
-        match std::mem::replace(&mut self.next_failure, NextFailure::None) {
-            NextFailure::None => Ok(self.approve(request, OperationKind::Payment)),
-
-            NextFailure::Declined(reason) => Err(TerminalError::Declined(reason.into())),
-
-            NextFailure::ReplyLostAfterApproving => {
-                // Порядок важен: банк одобрил, и только потом пропал ответ.
-                self.approve(request, OperationKind::Payment);
-                Err(TerminalError::Unknown("ответ терминала не получен".into()))
-            }
-
-            NextFailure::ReplyLostBeforeApproving => {
-                Err(TerminalError::Unknown("ответ терминала не получен".into()))
-            }
-
-            NextFailure::ReplyLostThenDisconnected => {
-                self.approve(request, OperationKind::Payment);
-                self.connected = false;
-                Err(TerminalError::Unknown("связь оборвана при ответе".into()))
-            }
-        }
+        self.perform(request, OperationKind::Payment)
     }
 
     fn refund(&mut self, request: &PaymentRequest) -> TerminalResult<Authorization> {
-        self.ensure_connected()?;
-        Ok(self.approve(request, OperationKind::Refund))
+        // Возврат идёт теми же сценариями, что и оплата: связь рвётся
+        // одинаково в обе стороны, а деньги, ушедшие гостю без нашего ведома,
+        // ищутся по выписке ровно так же, как списанные без чека.
+        self.perform(request, OperationKind::Refund)
     }
 
     fn reversal(&mut self, client_id: &str) -> TerminalResult<()> {

@@ -50,7 +50,49 @@ function orderNet(context: ReportContext, order: Order): string {
       mode: discount.mode,
       value: discount.value,
     }));
-  return computeTotals(subtotal, lines).total;
+  /*
+   * Возврат вычитается здесь же, а не в каждом отчёте: он такая же поправка
+   * к уплаченному, как скидка, и по той же причине. Пропустив его, отчёты
+   * по позициям покажут выручку, которой уже нет, а отчёт по платежам (011)
+   * её вычтет — и управляющий при сверке смены получит две правдоподобные
+   * суммы вместо одной верной.
+   */
+  const paid = toMinor(computeTotals(subtotal, lines).total);
+  return fromMinor(paid - refundedMinorOf(context, order.id));
+}
+
+/** Сколько по этому чеку вернули гостю. Ноль — возвратов не было. */
+function refundedMinorOf(context: ReportContext, orderId: string): number {
+  return context.payments
+    .filter((payment) => payment.orderId === orderId && payment.refundOf !== null)
+    .reduce((acc, payment) => acc + toMinor(payment.amount), 0);
+}
+
+/**
+ * Чеки, возвращённые **целиком**: деньги гостю отданы полностью.
+ *
+ * Отдельно от «есть возврат» потому, что расход блюд — отчёт про еду:
+ * вернули чек — вернули и еду, продажи не было. Частичный возврат чека касса
+ * не делает (`state/checkout.tsx`), но строка может приехать с узла, и тогда
+ * блюда остаются проданными: какое из них вернули, платёж не говорит.
+ */
+function fullyRefundedOrderIds(context: ReportContext): Set<string> {
+  const sold = new Map<string, number>();
+  const back = new Map<string, number>();
+
+  for (const payment of context.payments) {
+    const bucket = payment.refundOf === null ? sold : back;
+    bucket.set(
+      payment.orderId,
+      (bucket.get(payment.orderId) ?? 0) + toMinor(payment.amount),
+    );
+  }
+
+  return new Set(
+    [...back.entries()]
+      .filter(([orderId, minor]) => minor >= (sold.get(orderId) ?? 0))
+      .map(([orderId]) => orderId),
+  );
 }
 
 export interface ReportColumn {
@@ -196,7 +238,13 @@ export const REPORTS: ReportDefinition[] = [
     run: (context) => {
       const byDish = new Map<string, { name: string; qty: number; minor: number }>();
 
-      for (const item of itemsOf(context, paidOrders(context))) {
+      // Возвращённый чек — несостоявшаяся продажа: еда вернулась вместе
+      // с деньгами. Посчитав её, отчёт завысит расход, а по нему заказывают
+      // продукты на завтра.
+      const refunded = fullyRefundedOrderIds(context);
+      const sold = paidOrders(context).filter((order) => !refunded.has(order.id));
+
+      for (const item of itemsOf(context, sold)) {
         const menuItem = findMenuItem(item.menuItemId);
         const bucket = byDish.get(item.menuItemId) ?? {
           name: menuItem?.name ?? "Позиция удалена из меню",
@@ -333,7 +381,12 @@ export const REPORTS: ReportDefinition[] = [
       const rows = paidOrders(context)
         .sort((a, b) => (a.receiptNumber ?? 0) - (b.receiptNumber ?? 0))
         .map((order) => ({
-          receipt: String(order.receiptNumber ?? "—"),
+          // Пометка обязательна: без неё возвращённый чек выглядит счётом
+          // на нулевую сумму, то есть ошибкой кассы, а не возвратом.
+          receipt:
+            refundedMinorOf(context, order.id) > 0
+              ? `${order.receiptNumber ?? "—"} · возврат`
+              : String(order.receiptNumber ?? "—"),
           number: `№ ${order.number}`,
           time: formatTime(order.createdAt),
           waiter: findStaff(order.waiterId)?.fullName ?? order.waiterId,

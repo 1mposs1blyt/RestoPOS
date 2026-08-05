@@ -60,7 +60,11 @@ const SECTIONS: Section[] = [
         permission: "order.view",
         route: { name: "documents" },
       },
-      { label: "Возврат товаров", permission: "payment.refund", route: null },
+      {
+        label: "Возврат по чеку",
+        permission: "payment.refund",
+        route: { name: "refund" },
+      },
     ],
   },
   {

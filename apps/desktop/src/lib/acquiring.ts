@@ -97,12 +97,18 @@ export async function acquiringReversal(clientId: string): Promise<void> {
   await invoke("acquiring_reversal", { clientId });
 }
 
-/** Возврат по карте — своя операция, а не отмена оплаты. */
+/**
+ * Возврат по карте — своя операция, а не отмена оплаты: отменить можно только
+ * сегодняшнюю, а возврат делают и через неделю.
+ *
+ * Исход такой же трёхсоставный, как у оплаты, и по той же причине: «не знаю»
+ * означает деньги, возможно ушедшие гостю без встречной строки в кассе.
+ */
 export async function acquiringRefund(
   request: AcquiringPaymentRequest,
-): Promise<Authorization> {
+): Promise<PaymentOutcome> {
   requireTauri();
-  return invoke<Authorization>("acquiring_refund", { request });
+  return invoke<PaymentOutcome>("acquiring_refund", { request });
 }
 
 export async function acquiringSimulate(

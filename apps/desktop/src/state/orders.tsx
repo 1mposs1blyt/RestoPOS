@@ -20,6 +20,7 @@ import type {
 import { loadState, newId, saveState } from "../lib/storage";
 import { multiplyMoney, sumMoney } from "../lib/money";
 import { computeTotals, type OrderTotals } from "../lib/discount";
+import { refundablePayments } from "../lib/refund";
 import { findDiscountType } from "../data/discount-types";
 import { findPaymentType } from "../data/payment-types";
 import { findMenuItem } from "./menu";
@@ -459,8 +460,19 @@ export function OrdersProvider({
           type: "order/refund",
           payments: paymentIds.flatMap((paymentId) => {
             const source = state.payments[paymentId];
-            // Возврат возврата — бессмыслица: встречная строка уже существует.
-            if (!source || source.refundOf !== null) return [];
+            if (!source) return [];
+            /*
+             * Что вернуть можно, а что уже вернули, решает `lib/refund.ts` —
+             * там же, где это под тестами. Проверять здесь ещё раз обязательно:
+             * между двумя касаниями сенсорного экрана состояние одно и то же,
+             * и второе нажатие «Возврат» отдало бы гостю ту же сумму дважды.
+             */
+            const refundable = refundablePayments(
+              Object.values(state.payments).filter(
+                (payment) => payment.orderId === source.orderId,
+              ),
+            );
+            if (!refundable.some((payment) => payment.id === source.id)) return [];
             return [
               {
                 ...source,

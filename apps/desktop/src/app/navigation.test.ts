@@ -113,6 +113,7 @@ describe("право сотрудника", () => {
       "order",
       "counter",
       "payment",
+      "refund",
       "cash",
       "reports",
       "documents",
@@ -222,6 +223,20 @@ describe("сопутствующие экраны", () => {
     const cookAtTill = scope({ permissions: permissionsOf("cook") });
     expect(routesFor(cookAtTill)).toContain("personal");
     expect(hasWorkOn(cookAtTill)).toBe(false);
+  });
+
+  it("возврат по чеку есть у кассира, но работой терминала не считается", () => {
+    // Возвраты случаются несколько раз в день: экран нужен, но ради него
+    // одного за кассу не встают — иначе он подменял бы собой отказ входа.
+    const cashier = scope({ permissions: permissionsOf("cashier") });
+    expect(routesFor(cashier)).toContain("refund");
+    expect(workRoutes(cashier)).not.toContain("refund");
+    expect(defaultRouteFor(cashier)).not.toEqual({ name: "refund" });
+  });
+
+  it("официанту экран возврата не выдаётся: права у него нет", () => {
+    // Право побиваемое, но подтверждают само действие, а не вход на экран.
+    expect(routesFor(scope())).not.toContain("refund");
   });
 
   it("экран оплаты тоже сопутствующий: без заказа он бессмыслен", () => {

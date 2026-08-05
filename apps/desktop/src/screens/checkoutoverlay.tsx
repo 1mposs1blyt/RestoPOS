@@ -20,16 +20,24 @@ export function CheckoutOverlay() {
   if (status.stage === "idle" || status.stage === "done") return null;
 
   if (status.stage === "acquiring" || status.stage === "fiscal") {
+    const isRefund = status.operation === "refund";
     return (
       <Backdrop>
         <div className="w-[28rem] space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-8 text-center shadow-2xl">
           <span className="text-5xl">
             {status.stage === "acquiring" ? "💳" : "🧾"}
           </span>
+          {/* Направление денег кассир читает отсюда: у возврата те же два шага
+              и те же устройства, но карту прикладывают ради обратной операции,
+              и путать их нельзя. */}
           <h2 className="text-xl font-black text-slate-100">
             {status.stage === "acquiring"
-              ? "Приложите карту к терминалу"
-              : "Печатаем фискальный чек"}
+              ? isRefund
+                ? "Приложите карту для возврата"
+                : "Приложите карту к терминалу"
+              : isRefund
+                ? "Печатаем чек возврата"
+                : "Печатаем фискальный чек"}
           </h2>
           {status.stage === "acquiring" && status.of > 1 && (
             <p className="text-sm text-slate-400">
@@ -50,11 +58,15 @@ export function CheckoutOverlay() {
         <div className="w-[28rem] space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-8 text-center shadow-2xl">
           <span className="text-5xl">🚫</span>
           <h2 className="text-xl font-black text-slate-100">
-            Расчёт не прошёл
+            {status.operation === "refund"
+              ? "Возврат не прошёл"
+              : "Расчёт не прошёл"}
           </h2>
           <p className="text-sm leading-snug text-slate-400">{status.reason}</p>
           <p className="text-sm text-slate-500">
-            Деньги гостя на месте. Можно пробовать снова.
+            {status.operation === "refund"
+              ? "Деньги гостю не отданы, чек остался закрытым. Можно пробовать снова."
+              : "Деньги гостя на месте. Можно пробовать снова."}
           </p>
           <button
             type="button"

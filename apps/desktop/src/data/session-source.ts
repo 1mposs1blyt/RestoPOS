@@ -14,6 +14,7 @@ import {
   setSessionToken,
   setSessionVenueId,
 } from "../api";
+import { loadState, saveState } from "../lib/storage";
 
 /**
  * Откуда терминал берёт сотрудника и его права.
@@ -127,7 +128,38 @@ export function staffRoster(): Staff[] {
 }
 
 export function findStaff(staffId: UUID): Staff | undefined {
-  return DEMO_STAFF.find((entry) => entry.staff.id === staffId)?.staff;
+  return (
+    DEMO_STAFF.find((entry) => entry.staff.id === staffId)?.staff ??
+    knownStaff()[staffId]
+  );
+}
+
+/**
+ * Кто уже входил на этом терминале.
+ *
+ * Нужно затем, что заказы, явки и журнал хранят один `staffId`, а имя ищут
+ * справочником — и в режиме узла демо-справочник не знает никого. Без этого
+ * кэша управляющий видел в отчёте по официантам не фамилию, а UUID: строка
+ * формально верная и совершенно нечитаемая.
+ *
+ * Маршрута `GET /staff` у узла пока нет, поэтому запоминаем тех, кто прикладывал
+ * PIN: ровно они и создают заказы на этом терминале. Появится маршрут — кэш
+ * заменится списком с узла, а места вызова не изменятся.
+ *
+ * Имя обновляется на каждом входе: переименовали сотрудника на узле — оно
+ * приедет само, а старая копия в заказах не хранится (её там и нет).
+ */
+const KNOWN_STAFF_KEY = "staff.known";
+
+function knownStaff(): Record<UUID, Staff> {
+  return loadState<Record<UUID, Staff>>(KNOWN_STAFF_KEY, {});
+}
+
+function rememberStaff(staff: Staff): void {
+  const known = knownStaff();
+  const stored = known[staff.id];
+  if (stored?.fullName === staff.fullName && stored.role === staff.role) return;
+  saveState(KNOWN_STAFF_KEY, { ...known, [staff.id]: staff });
 }
 
 /**
@@ -193,6 +225,8 @@ export async function authenticate(pin: string): Promise<AuthResult> {
     setSessionToken(session.token ?? null);
     // Заведение уходит заголовком на всех следующих запросах.
     setSessionVenueId(session.venue.id);
+    // Чтобы отчёты и табель показывали фамилию, а не идентификатор.
+    rememberStaff(session.staff);
 
     return {
       staff: session.staff,

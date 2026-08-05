@@ -76,13 +76,18 @@ pub fn acquiring_reversal(
 }
 
 /// Возврат по карте — отдельная операция, а не отмена оплаты.
+///
+/// Возвращает исход, как и оплата: у возврата тоже три состояния, и «не знаю»
+/// здесь означает деньги, возможно ушедшие гостю без встречной строки в кассе.
+/// Отдавать это ошибкой строкой значило бы потерять разницу между «банк отказал,
+/// можно повторить» и «повторять нельзя».
 #[tauri::command]
 pub fn acquiring_refund(
     state: tauri::State<'_, AcquiringState>,
     request: PaymentRequest,
-) -> Result<super::Authorization, String> {
+) -> Result<PaymentOutcome, String> {
     let mut terminal = lock(&state)?;
-    terminal.refund(&request).map_err(|e| e.to_string())
+    Ok(super::refund_with_recovery(terminal.as_mut(), &request))
 }
 
 /// Сценарии отказов терминала для проверки кассы без железа.
