@@ -2,5 +2,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    desktop_lib::run()
+    tauri::Builder::default()
+        // Нативный плагин shell теперь будет успешно найден Cargo
+        .plugin(tauri_plugin_shell::init())
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
+
+

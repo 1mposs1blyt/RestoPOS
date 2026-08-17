@@ -26,12 +26,17 @@
       "csp": null
     }
   },
+  "plugins": {
+    "shell": {}
+  },
   "bundle": {
     "active": true,
     "targets": "all",
     "windows": {
       "wix": {
-        "language": ["ru-RU"]
+        "language": [
+          "ru-RU"
+        ]
       }
     },
     "icon": [
