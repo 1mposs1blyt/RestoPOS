@@ -10,6 +10,7 @@ import {
 import type {
   Money,
   Order,
+  OrderDiscount,
   OrderItem,
   OrderItemStatus,
   Payment,
@@ -18,6 +19,9 @@ import type {
 } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
 import { multiplyMoney, sumMoney } from "../lib/money";
+import { computeTotals, type OrderTotals } from "../lib/discount";
+import { refundablePayments } from "../lib/refund";
+import { findDiscountType } from "../data/discount-types";
 import { findPaymentType } from "../data/payment-types";
 import { findMenuItem } from "./menu";
 import { useShifts } from "./shifts";
@@ -77,7 +81,13 @@ interface OrdersValue {
    * наличными) плюс строки возвратов — поэтому список, а не один платёж.
    */
   paymentsOfOrder: (orderId: UUID) => Payment[];
+  /** Сумма позиций без скидок и надбавок. */
+  orderSubtotal: (orderId: UUID) => Money;
+  /** Итог к оплате: подытог − скидка + надбавка. Его и платит гость. */
   orderTotal: (orderId: UUID) => Money;
+  /** Разложенные итоги для экрана оплаты и чека. */
+  orderTotals: (orderId: UUID) => OrderTotals;
+  discountsOfOrder: (orderId: UUID) => OrderDiscount[];
   tableStatus: (tableId: UUID) => TableStatus;
   /** Есть ли что отправлять на кухню (позиции в статусе `new`). */
   hasPendingItems: (orderId: UUID) => boolean;
@@ -100,6 +110,16 @@ interface OrdersValue {
   /** Приписать позицию гостю или снять привязку (`null`). */
   setItemGuest: (itemId: UUID, guestNumber: number | null) => void;
   setGuestCount: (orderId: UUID, guestCount: number) => void;
+  /**
+   * Применить скидку из справочника. `approvedBy` — если она требовала
+   * подтверждения чужим PIN.
+   */
+  applyDiscount: (
+    orderId: UUID,
+    discountTypeId: UUID,
+    approvedBy?: UUID | null,
+  ) => void;
+  removeDiscount: (discountId: UUID) => void;
   setItemStatus: (itemId: UUID, status: OrderItemStatus) => void;
   sendToKitchen: (orderId: UUID) => void;
   /**
@@ -119,6 +139,15 @@ export interface PaymentDraft {
   amount: Money;
   /** Сколько дал гость наличными — для сдачи. `null` для безналичных. */
   tendered: Money | null;
+  /**
+   * Результат эквайринга, если строка платилась картой. Заполняет
+   * `state/checkout.tsx` после ответа терминала — экран оплаты этих полей
+   * не знает и знать не должен.
+   */
+  authCode?: string | null;
+  rrn?: string | null;
+  /** Фискальный признак чека, которым закрыт заказ. */
+  fiscalSign?: string | null;
 }
 
 const OrdersContext = createContext<OrdersValue | null>(null);
@@ -149,6 +178,11 @@ function toPayment(
     tendered: draft.tendered,
     staffId,
     refundOf: null,
+    // Реквизиты банка и ККТ приезжают снимком, как род и название типа:
+    // закрытый чек — финансовый документ, и пересчитывать его нечем.
+    authCode: draft.authCode ?? null,
+    rrn: draft.rrn ?? null,
+    fiscalSign: draft.fiscalSign ?? null,
     paidAt: new Date().toISOString(),
     clientId: newId(),
   };
@@ -187,7 +221,7 @@ export function OrdersProvider({
     [state.items],
   );
 
-  const orderTotal = useCallback(
+  const orderSubtotal = useCallback(
     (orderId: UUID): Money =>
       sumMoney(
         itemsOfOrder(orderId)
@@ -208,6 +242,38 @@ export function OrdersProvider({
           }),
       ),
     [itemsOfOrder],
+  );
+
+  const discountsOfOrder = useCallback(
+    (orderId: UUID) =>
+      Object.values(state.discounts)
+        .filter((discount) => discount.orderId === orderId)
+        .sort((a, b) => a.appliedAt.localeCompare(b.appliedAt)),
+    [state.discounts],
+  );
+
+  /*
+   * Итоги считает `lib/discount.ts` — чистой функцией под тестами. Здесь
+   * только сбор входных данных: правило «итог = подытог − скидка + надбавка»
+   * и обрезка скидки по подытогу живут в одном месте, а не размазаны
+   * по экранам, каждый из которых считал бы по-своему.
+   */
+  const orderTotals = useCallback(
+    (orderId: UUID): OrderTotals =>
+      computeTotals(
+        orderSubtotal(orderId),
+        discountsOfOrder(orderId).map((discount) => ({
+          kind: discount.kind,
+          mode: discount.mode,
+          value: discount.value,
+        })),
+      ),
+    [orderSubtotal, discountsOfOrder],
+  );
+
+  const orderTotal = useCallback(
+    (orderId: UUID): Money => orderTotals(orderId).total,
+    [orderTotals],
   );
 
   const activeOrders = useMemo(
@@ -312,7 +378,10 @@ export function OrdersProvider({
         Object.values(state.payments).filter(
           (payment) => payment.orderId === orderId,
         ),
+      orderSubtotal,
       orderTotal,
+      orderTotals,
+      discountsOfOrder,
       tableStatus: (tableId) => (orderOfTable(tableId) ? "occupied" : "free"),
       hasPendingItems: (orderId) =>
         itemsOfOrder(orderId).some((item) => item.status === "new"),
@@ -337,6 +406,36 @@ export function OrdersProvider({
         dispatch({ type: "item/guest", itemId, guestNumber }),
       setGuestCount: (orderId, guestCount) =>
         dispatch({ type: "order/guests", orderId, guestCount }),
+      applyDiscount: (orderId, discountTypeId, approvedBy = null) => {
+        const type = findDiscountType(discountTypeId);
+        if (!type) return;
+        const subtotal = orderSubtotal(orderId);
+        // Сумму считаем и сохраняем снимком: пересчёт процента при каждом
+        // показе дал бы другое число, если состав чека потом изменился.
+        const { discount, surcharge } = computeTotals(subtotal, [
+          { kind: type.kind, mode: type.mode, value: type.value },
+        ]);
+        dispatch({
+          type: "discount/apply",
+          discount: {
+            id: newId(),
+            orderId,
+            discountTypeId: type.id,
+            kind: type.kind,
+            mode: type.mode,
+            label: type.label,
+            value: type.value,
+            amount: type.kind === "discount" ? discount : surcharge,
+            orderItemId: null,
+            staffId: waiterId ?? "unknown",
+            approvedBy,
+            appliedAt: new Date().toISOString(),
+            clientId: newId(),
+          },
+        });
+      },
+      removeDiscount: (discountId) =>
+        dispatch({ type: "discount/remove", discountId }),
       setItemStatus: (itemId, status) =>
         dispatch({ type: "item/status", itemId, status }),
       sendToKitchen: (orderId) =>
@@ -361,8 +460,19 @@ export function OrdersProvider({
           type: "order/refund",
           payments: paymentIds.flatMap((paymentId) => {
             const source = state.payments[paymentId];
-            // Возврат возврата — бессмыслица: встречная строка уже существует.
-            if (!source || source.refundOf !== null) return [];
+            if (!source) return [];
+            /*
+             * Что вернуть можно, а что уже вернули, решает `lib/refund.ts` —
+             * там же, где это под тестами. Проверять здесь ещё раз обязательно:
+             * между двумя касаниями сенсорного экрана состояние одно и то же,
+             * и второе нажатие «Возврат» отдало бы гостю ту же сумму дважды.
+             */
+            const refundable = refundablePayments(
+              Object.values(state.payments).filter(
+                (payment) => payment.orderId === source.orderId,
+              ),
+            );
+            if (!refundable.some((payment) => payment.id === source.id)) return [];
             return [
               {
                 ...source,
@@ -387,7 +497,10 @@ export function OrdersProvider({
       counterOrder,
       kitchenTickets,
       itemsOfOrder,
+      orderSubtotal,
       orderTotal,
+      orderTotals,
+      discountsOfOrder,
       openOrder,
       addItem,
       autoReadyStationIds,

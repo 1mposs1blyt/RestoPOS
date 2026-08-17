@@ -14,11 +14,13 @@ import {
 } from "./app/navigation";
 import { SessionProvider, roleLabel, useSession } from "./app/session";
 import { AppShell } from "./layout/AppShell";
+import { CheckoutProvider } from "./state/checkout";
 import { OrdersProvider } from "./state/orders";
 import { PrintingProvider } from "./state/printing";
 import { DeliveryProvider } from "./state/delivery";
 import { GuestsProvider } from "./state/guests";
 import { ShiftsProvider } from "./state/shifts";
+import { DevicesProvider } from "./state/devices";
 import { StopListProvider } from "./state/stoplist";
 import { StationsProvider } from "./state/stations";
 import { TablesProvider } from "./state/tables";
@@ -28,8 +30,10 @@ import { AuditScreen } from "./screens/auditscreen";
 import { CashScreen } from "./screens/cashscreen";
 import { CounterScreen } from "./screens/counterscreen";
 import { DeliveryScreen } from "./screens/deliveryscreen";
+import { DevicesScreen } from "./screens/devicesscreen";
 import { DocumentsScreen } from "./screens/documentsscreen";
 import { PaymentScreen } from "./screens/paymentscreen";
+import { RefundScreen } from "./screens/refundscreen";
 import { GuestsScreen } from "./screens/guestsscreen";
 import { KitchenScreen } from "./screens/kitchenscreen";
 import { MainMenuScreen } from "./screens/mainmenuscreen";
@@ -106,7 +110,10 @@ function Terminal() {
     <AccessProvider>
       {/* Станции выше заказов: отправка на кухню решает по ним, куда уезжает
           позиция и надо ли считать её готовой сразу (станция без экрана). */}
-      <StationsProvider>
+      {/* Оборудование выше всего: отпущенный COM-порт ФР показывает оболочка
+          на каждом экране, а денежный ящик и чековый принтер нужны кассе. */}
+      <DevicesProvider>
+        <StationsProvider>
         {/* Смены выше заказов: заказ закрывается в кассовую смену, и её номер
             попадает в чек. Обратный порядок означал бы, что чек уже создан,
             а смены, к которой он относится, ещё нет. */}
@@ -126,23 +133,29 @@ function Terminal() {
                 waiterId={staff.id}
               >
                 <PrintingProvider>
-                  {/* Доставка ниже заказов: она надстройка над ними — позиции
-                      и деньги живут в заказе, здесь только адрес, курьер и срок. */}
-                  <DeliveryProvider venueId={venue.id}>
-                    <GuestsProvider>
-                      <NavigationProvider initialRoute={initialRoute}>
-                        <AppShell scope={scope}>
-                          <CurrentScreen scope={scope} />
-                        </AppShell>
-                      </NavigationProvider>
-                    </GuestsProvider>
-                  </DeliveryProvider>
+                  {/* Расчёт ниже заказов и оборудования: он держит порядок
+                      «эквайринг → фискальный чек → заказ оплачен» и знает
+                      обоих — и ККМ из оборудования, и заказ. */}
+                  <CheckoutProvider>
+                    {/* Доставка ниже заказов: она надстройка над ними — позиции
+                        и деньги живут в заказе, здесь только адрес, курьер и срок. */}
+                    <DeliveryProvider venueId={venue.id}>
+                      <GuestsProvider>
+                        <NavigationProvider initialRoute={initialRoute}>
+                          <AppShell scope={scope}>
+                            <CurrentScreen scope={scope} />
+                          </AppShell>
+                        </NavigationProvider>
+                      </GuestsProvider>
+                    </DeliveryProvider>
+                  </CheckoutProvider>
                 </PrintingProvider>
               </OrdersProvider>
             </TablesProvider>
           </StopListProvider>
-        </ShiftsProvider>
-      </StationsProvider>
+          </ShiftsProvider>
+        </StationsProvider>
+      </DevicesProvider>
     </AccessProvider>
   );
 }
@@ -189,6 +202,9 @@ function CurrentScreen({ scope }: { scope: AccessScope }) {
     case "payment":
       return <PaymentScreen orderId={route.orderId} />;
 
+    case "refund":
+      return <RefundScreen />;
+
     case "cash":
       return <CashScreen />;
 
@@ -233,6 +249,9 @@ function CurrentScreen({ scope }: { scope: AccessScope }) {
           <DeliveryScreen />
         </FeatureGate>
       );
+
+    case "devices":
+      return <DevicesScreen />;
 
     case "service":
       return <ServiceScreen />;

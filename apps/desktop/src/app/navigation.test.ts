@@ -98,10 +98,30 @@ describe("право сотрудника", () => {
     expect(workRoutes(scope({ kind: "kds" }))).toEqual([]);
   });
 
-  it("тех. поддержке доступен только сервисный экран", () => {
-    expect(routesFor(scope({ permissions: permissionsOf("support") }))).toEqual([
-      "service",
-    ]);
+  /*
+   * У вендорского инженера ровно одно право `terminal.service`, и проверять
+   * надо не длину списка, а суть: ни заказов, ни денег он не видит. Инженер
+   * с правом сторно в чужой кассе — это дыра, а не удобство.
+   */
+  it("тех. поддержке доступен только сервисный режим", () => {
+    const support = routesFor(scope({ permissions: permissionsOf("support") }));
+
+    expect(support).toContain("service");
+    expect(support).toContain("devices");
+    for (const forbidden of [
+      "hall",
+      "order",
+      "counter",
+      "payment",
+      "refund",
+      "cash",
+      "reports",
+      "documents",
+      "audit",
+      "personal",
+    ]) {
+      expect(support).not.toContain(forbidden);
+    }
   });
 
   it("сервисный экран доступен на терминале любого типа", () => {
@@ -203,6 +223,20 @@ describe("сопутствующие экраны", () => {
     const cookAtTill = scope({ permissions: permissionsOf("cook") });
     expect(routesFor(cookAtTill)).toContain("personal");
     expect(hasWorkOn(cookAtTill)).toBe(false);
+  });
+
+  it("возврат по чеку есть у кассира, но работой терминала не считается", () => {
+    // Возвраты случаются несколько раз в день: экран нужен, но ради него
+    // одного за кассу не встают — иначе он подменял бы собой отказ входа.
+    const cashier = scope({ permissions: permissionsOf("cashier") });
+    expect(routesFor(cashier)).toContain("refund");
+    expect(workRoutes(cashier)).not.toContain("refund");
+    expect(defaultRouteFor(cashier)).not.toEqual({ name: "refund" });
+  });
+
+  it("официанту экран возврата не выдаётся: права у него нет", () => {
+    // Право побиваемое, но подтверждают само действие, а не вход на экран.
+    expect(routesFor(scope())).not.toContain("refund");
   });
 
   it("экран оплаты тоже сопутствующий: без заказа он бессмыслен", () => {

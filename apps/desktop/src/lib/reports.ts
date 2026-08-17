@@ -2,11 +2,13 @@ import type {
   CashOperation,
   CashShift,
   Order,
+  OrderDiscount,
   OrderItem,
   Payment,
 } from "@restopos/shared-types";
 import { findMenuItem } from "../state/menu";
 import { findStaff } from "../data/session-source";
+import { computeTotals } from "./discount";
 import { fromMinor, multiplyMoney, sumMoney, toMinor, ZERO_MONEY } from "./money";
 
 /**
@@ -25,8 +27,72 @@ export interface ReportContext {
   orders: Order[];
   items: OrderItem[];
   payments: Payment[];
+  discounts: OrderDiscount[];
   operations: CashOperation[];
   cashShift: CashShift | undefined;
+}
+
+/**
+ * Сумма заказа **со скидками** — то, что реально заплатил гость.
+ *
+ * Считать выручку по позициям в меню нельзя: скидка применяется к заказу,
+ * и сумма позиций больше уплаченного ровно на неё. Пока скидок не было,
+ * разницы не существовало, и отчёты по позициям сходились с отчётами
+ * по платежам сами собой — с появлением скидок они разъехались, и управляющий
+ * при сверке смены видел две разные выручки.
+ */
+function orderNet(context: ReportContext, order: Order): string {
+  const subtotal = sumMoney(itemsOf(context, [order]).map(lineTotal));
+  const lines = context.discounts
+    .filter((discount) => discount.orderId === order.id)
+    .map((discount) => ({
+      kind: discount.kind,
+      mode: discount.mode,
+      value: discount.value,
+    }));
+  /*
+   * Возврат вычитается здесь же, а не в каждом отчёте: он такая же поправка
+   * к уплаченному, как скидка, и по той же причине. Пропустив его, отчёты
+   * по позициям покажут выручку, которой уже нет, а отчёт по платежам (011)
+   * её вычтет — и управляющий при сверке смены получит две правдоподобные
+   * суммы вместо одной верной.
+   */
+  const paid = toMinor(computeTotals(subtotal, lines).total);
+  return fromMinor(paid - refundedMinorOf(context, order.id));
+}
+
+/** Сколько по этому чеку вернули гостю. Ноль — возвратов не было. */
+function refundedMinorOf(context: ReportContext, orderId: string): number {
+  return context.payments
+    .filter((payment) => payment.orderId === orderId && payment.refundOf !== null)
+    .reduce((acc, payment) => acc + toMinor(payment.amount), 0);
+}
+
+/**
+ * Чеки, возвращённые **целиком**: деньги гостю отданы полностью.
+ *
+ * Отдельно от «есть возврат» потому, что расход блюд — отчёт про еду:
+ * вернули чек — вернули и еду, продажи не было. Частичный возврат чека касса
+ * не делает (`state/checkout.tsx`), но строка может приехать с узла, и тогда
+ * блюда остаются проданными: какое из них вернули, платёж не говорит.
+ */
+function fullyRefundedOrderIds(context: ReportContext): Set<string> {
+  const sold = new Map<string, number>();
+  const back = new Map<string, number>();
+
+  for (const payment of context.payments) {
+    const bucket = payment.refundOf === null ? sold : back;
+    bucket.set(
+      payment.orderId,
+      (bucket.get(payment.orderId) ?? 0) + toMinor(payment.amount),
+    );
+  }
+
+  return new Set(
+    [...back.entries()]
+      .filter(([orderId, minor]) => minor >= (sold.get(orderId) ?? 0))
+      .map(([orderId]) => orderId),
+  );
 }
 
 export interface ReportColumn {
@@ -134,9 +200,9 @@ export const REPORTS: ReportDefinition[] = [
       const byWaiter = new Map<string, { count: number; minor: number }>();
 
       for (const order of orders) {
-        const total = sumMoney(
-          itemsOf(context, [order]).map(lineTotal),
-        );
+        // Со скидками: иначе выручка по официантам не сойдётся с выручкой
+        // по типам оплаты, и обе будут выглядеть правдоподобно.
+        const total = orderNet(context, order);
         const bucket = byWaiter.get(order.waiterId) ?? { count: 0, minor: 0 };
         bucket.count += 1;
         bucket.minor += toMinor(total);
@@ -172,7 +238,13 @@ export const REPORTS: ReportDefinition[] = [
     run: (context) => {
       const byDish = new Map<string, { name: string; qty: number; minor: number }>();
 
-      for (const item of itemsOf(context, paidOrders(context))) {
+      // Возвращённый чек — несостоявшаяся продажа: еда вернулась вместе
+      // с деньгами. Посчитав её, отчёт завысит расход, а по нему заказывают
+      // продукты на завтра.
+      const refunded = fullyRefundedOrderIds(context);
+      const sold = paidOrders(context).filter((order) => !refunded.has(order.id));
+
+      for (const item of itemsOf(context, sold)) {
         const menuItem = findMenuItem(item.menuItemId);
         const bucket = byDish.get(item.menuItemId) ?? {
           name: menuItem?.name ?? "Позиция удалена из меню",
@@ -249,6 +321,59 @@ export const REPORTS: ReportDefinition[] = [
   },
 
   {
+    code: "036",
+    title: "Отчёт по скидкам и надбавкам",
+    group: "03 Специальные отчёты",
+    run: (context) => {
+      const orderById = new Map(context.orders.map((order) => [order.id, order]));
+      const ownOrders = new Set(paidOrders(context).map((order) => order.id));
+
+      const rows = context.discounts
+        // Только по закрытым чекам текущей смены: скидка на ещё не оплаченном
+        // заказе может быть снята, и в отчёт ей рано.
+        .filter((discount) => ownOrders.has(discount.orderId))
+        .sort((a, b) => a.appliedAt.localeCompare(b.appliedAt))
+        .map((discount) => ({
+          order: `№ ${orderById.get(discount.orderId)?.number ?? "—"}`,
+          label: discount.label,
+          // Скидка и надбавка в разных колонках намеренно: в сумме они могут
+          // дать ноль, и одной колонкой это выглядело бы как «ничего не было».
+          discount: discount.kind === "discount" ? discount.amount : "",
+          surcharge: discount.kind === "surcharge" ? discount.amount : "",
+          staff: findStaff(discount.staffId)?.fullName ?? discount.staffId,
+          approved: discount.approvedBy
+            ? (findStaff(discount.approvedBy)?.fullName ?? discount.approvedBy)
+            : "своим правом",
+        }));
+
+      const sumOf = (key: "discount" | "surcharge") =>
+        fromMinor(
+          rows.reduce((acc, row) => acc + (row[key] ? toMinor(row[key]) : 0), 0),
+        );
+
+      return {
+        columns: [
+          { key: "order", label: "Заказ" },
+          { key: "label", label: "Основание" },
+          { key: "staff", label: "Кто" },
+          { key: "approved", label: "Подтвердил" },
+          { key: "discount", label: "Скидка", numeric: true },
+          { key: "surcharge", label: "Надбавка", numeric: true },
+        ],
+        rows,
+        footer: {
+          order: "Итого",
+          label: "",
+          staff: "",
+          approved: "",
+          discount: sumOf("discount"),
+          surcharge: sumOf("surcharge"),
+        },
+      };
+    },
+  },
+
+  {
     code: "046",
     title: "Реестр счетов",
     group: "04 Отчёты по кассе",
@@ -256,11 +381,18 @@ export const REPORTS: ReportDefinition[] = [
       const rows = paidOrders(context)
         .sort((a, b) => (a.receiptNumber ?? 0) - (b.receiptNumber ?? 0))
         .map((order) => ({
-          receipt: String(order.receiptNumber ?? "—"),
+          // Пометка обязательна: без неё возвращённый чек выглядит счётом
+          // на нулевую сумму, то есть ошибкой кассы, а не возвратом.
+          receipt:
+            refundedMinorOf(context, order.id) > 0
+              ? `${order.receiptNumber ?? "—"} · возврат`
+              : String(order.receiptNumber ?? "—"),
           number: `№ ${order.number}`,
           time: formatTime(order.createdAt),
           waiter: findStaff(order.waiterId)?.fullName ?? order.waiterId,
-          amount: sumMoney(itemsOf(context, [order]).map(lineTotal)),
+          // Сумма чека — уплаченная, а не по прайсу: реестр счетов сверяют
+          // с кассовой лентой.
+          amount: orderNet(context, order),
         }));
 
       return {

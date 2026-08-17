@@ -63,12 +63,38 @@ interface PrintingValue {
 
 const PrintingContext = createContext<PrintingValue | null>(null);
 
+/**
+ * Приведение очереди при запуске терминала.
+ *
+ * Задание в статусе «печатается» перезапуск пережить не может: исполнителя,
+ * который его вёл, больше нет, а новый берёт только `queued`. Такое задание
+ * висело бы «печатается» вечно — кнопки повтора у этого статуса нет, и никто
+ * бы не узнал, что марка не вышла с принтера. Блокировка терминала размонтирует
+ * провайдер ровно так же, как перезагрузка кассы, так что случай не редкий.
+ *
+ * В `failed`, а не обратно в `queued`: марка могла напечататься до обрыва,
+ * и автоповтор означал бы второе приготовленное блюдо. Повтор здесь — решение
+ * человека, и он же выбирает между «повторить» и «копия».
+ */
+export function restoreJobs(jobs: PrintJob[]): PrintJob[] {
+  return jobs.map((job) =>
+    job.status === "printing"
+      ? {
+          ...job,
+          status: "failed" as const,
+          error:
+            "Касса перезапущена во время печати — проверьте, вышла ли марка",
+        }
+      : job,
+  );
+}
+
 export function PrintingProvider({ children }: { children: ReactNode }) {
   const { state: ordersState, itemsOfOrder, sendToKitchen } = useOrders();
   const { outputs, findStation } = useStations();
   const { findTable } = useTables();
   const [jobs, setJobs] = useState<PrintJob[]>(() =>
-    loadState<PrintJob[]>(STORAGE_KEY, []),
+    restoreJobs(loadState<PrintJob[]>(STORAGE_KEY, [])),
   );
 
   useEffect(() => {

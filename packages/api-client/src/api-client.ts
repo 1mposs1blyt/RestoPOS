@@ -45,6 +45,20 @@ export class ApiClient {
       if (token) {
         config.headers.set("Authorization", `Bearer ${token}`);
       }
+      /*
+       * Кто спрашивает — терминал и заведение — уходит заголовками, а не телом.
+       * Узлу это нужно на каждом запросе: он определяет по терминалу его тип
+       * и заведение, а по заведению режет выборки (мультитенантность).
+       * Держать это в теле значило бы дописывать поля в каждый DTO.
+       */
+      if (options.terminalId) {
+        config.headers.set("X-Terminal-Id", options.terminalId);
+      }
+      // Заведение известно только после входа, поэтому геттером, а не значением.
+      const venueId = options.getVenueId?.();
+      if (venueId) {
+        config.headers.set("X-Venue-Id", venueId);
+      }
       return config;
     });
 

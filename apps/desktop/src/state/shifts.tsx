@@ -43,8 +43,12 @@ interface ShiftsValue {
   state: ShiftsState;
   /** Открытая кассовая смена или `undefined`, если день не начат. */
   cashShift: CashShift | undefined;
-  /** Личная смена того, кто сейчас за терминалом. */
+  /** Личная смена того, кто сейчас за терминалом. `undefined` — не открыта. */
   myShift: StaffShift | undefined;
+  /** Ведётся ли для этого входа табель. Ложь у вендорского `support`. */
+  tracksAttendance: boolean;
+  /** Отметить приход. Явку заводит человек, а не факт входа по PIN. */
+  openMyShift: () => void;
   /** Все открытые личные смены — для табеля и «сменить кассира». */
   openStaffShifts: StaffShift[];
   /** Отработано текущим сотрудником, в минутах. */
@@ -98,11 +102,18 @@ export function ShiftsProvider({
   }, [state]);
 
   /*
-   * Вход = приход на работу. Эффект без защиты от повтора здесь и не нужен:
-   * дедупликация лежит в редьюсере, потому что двойной вызов (StrictMode,
-   * двойное касание) видит один снимок состояния и снаружи неотличим от первого.
+   * Личная смена открывается КНОПКОЙ, а не входом по PIN.
+   *
+   * Раньше она открывалась автоматически: приложил пин — значит пришёл
+   * на работу. Это неверно. За терминал подходят и между делом: посмотреть
+   * заказ, подтвердить чужое сторно, глянуть отчёт — и каждый такой заход
+   * заводил бы явку, из которой потом считается зарплата. Отработанное время
+   * должно начинаться там, где человек это подтвердил.
+   *
+   * Дедупликация всё равно живёт в редьюсере: двойное касание по кнопке
+   * на сенсорном экране — норма, и оба обработчика видят один снимок состояния.
    */
-  useEffect(() => {
+  const openMyShift = useCallback(() => {
     if (!tracksAttendance) return;
     dispatch({
       type: "staffShift/open",
@@ -192,6 +203,8 @@ export function ShiftsProvider({
       state,
       cashShift,
       myShift,
+      tracksAttendance,
+      openMyShift,
       openStaffShifts,
       workedMinutes: (shift, now = new Date()) => {
         const from = new Date(shift.acceptedAt ?? shift.openedAt).getTime();
@@ -228,7 +241,17 @@ export function ShiftsProvider({
           approvedBy: staffId,
         }),
     }),
-    [state, cashShift, myShift, openStaffShifts, openCashShift, recordCash, staffId],
+    [
+      state,
+      cashShift,
+      myShift,
+      tracksAttendance,
+      openMyShift,
+      openStaffShifts,
+      openCashShift,
+      recordCash,
+      staffId,
+    ],
   );
 
   return (

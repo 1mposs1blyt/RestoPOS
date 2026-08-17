@@ -4,13 +4,20 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
 import type { TableLayout, TableShape, UUID } from "@restopos/shared-types";
-import { loadState, newId, saveState } from "../lib/storage";
+import { newId } from "../lib/storage";
+import {
+  fetchTables,
+  persistTableLayout,
+  saveLocal,
+  supportsStructureEdit,
+} from "../data/tables-source";
 import { nextTableLabel } from "./table-numbering";
-import { SHAPE_SIZES, clamp01, normalizeTables } from "./tables-migration";
+import { SHAPE_SIZES, clamp01 } from "./tables-migration";
 
 export { findDuplicateLabels } from "./table-numbering";
 
@@ -21,42 +28,33 @@ export { findDuplicateLabels } from "./table-numbering";
  */
 export type { TableLayout, TableShape };
 
-const STORAGE_KEY = "hall.layout";
-/** Ключ до появления сторов — читаем один раз, чтобы не потерять расстановку. */
-const LEGACY_KEY = "iiko_table_scheme";
-
-/**
- * Чтение расстановки с приведением к текущему формату.
- *
- * В localStorage могут лежать данные трёх поколений: самое старое под ключом
- * `iiko_table_scheme`, затем абсолютные `x`/`y`, и текущее — доли `cx`/`cy`.
- * Терять чужую расстановку при обновлении версии нельзя, поэтому конвертируем
- * (сам пересчёт — в `tables-migration.ts`, он покрыт тестами).
- */
-function loadTables(venueId: UUID): TableLayout[] {
-  try {
-    const stored = loadState<unknown[] | null>(STORAGE_KEY, null);
-    const raw =
-      stored ??
-      (JSON.parse(localStorage.getItem(LEGACY_KEY) ?? "null") as
-        | unknown[]
-        | null);
-    if (!raw) return [];
-    if (stored === null) localStorage.removeItem(LEGACY_KEY);
-
-    return normalizeTables(raw, venueId);
-  } catch (error) {
-    console.error("Не удалось прочитать схему зала:", error);
-    return [];
-  }
-}
+/** Состояние загрузки. Зал без столов и зал, который не доехал, — разное. */
+export type TablesStatus = "loading" | "ready" | "error";
 
 interface TablesValue {
   tables: TableLayout[];
+  status: TablesStatus;
+  /** Текст отказа для экрана. `null` — всё в порядке. */
+  error: string | null;
+  reload: () => void;
   findTable: (id: UUID) => TableLayout | undefined;
+  /**
+   * Можно ли менять состав зала. С узлом — нет: у него есть только сохранение
+   * геометрии, маршрутов на создание и удаление стола пока не существует.
+   */
+  canEditStructure: boolean;
   addTable: (shape: TableShape) => void;
-  /** Новый центр стола в долях холста. */
+  /** Новый центр стола в долях холста. Только в памяти — см. `commitTable`. */
   moveTable: (id: UUID, cx: number, cy: number) => void;
+  /**
+   * Зафиксировать положение стола: палец отпущен, можно сохранять.
+   *
+   * Отделено от `moveTable` намеренно. Перетаскивание даёт десятки событий
+   * в секунду, и слать PUT на каждое — это очередь запросов, которая приедет
+   * на узел уже после того, как стол оказался в другом месте. Сохраняем один
+   * раз, осевшее положение.
+   */
+  commitTable: (id: UUID) => void;
   renameTable: (id: UUID, label: string) => void;
   removeTable: (id: UUID) => void;
 }
@@ -70,11 +68,63 @@ export function TablesProvider({
   venueId: UUID;
   children: ReactNode;
 }) {
-  const [tables, setTables] = useState<TableLayout[]>(() => loadTables(venueId));
+  const [tables, setTables] = useState<TableLayout[]>([]);
+  const [status, setStatus] = useState<TablesStatus>("loading");
+  const [error, setError] = useState<string | null>(null);
+  const canEditStructure = supportsStructureEdit();
+
+  /*
+   * Свежий снимок столов для `commitTable`: он вызывается из обработчика
+   * отпускания пальца и обязан взять уже сдвинутое положение, а не то, что
+   * было при создании колбэка.
+   */
+  const tablesRef = useRef<TableLayout[]>(tables);
+  tablesRef.current = tables;
+
+  /*
+   * Номер попытки. Повторов бывает несколько подряд — по кнопке «повторить»
+   * и при смене заведения, — и ответ отменённой попытки не должен затирать
+   * результат следующей: узел на медленном канале вполне отвечает не по порядку.
+   */
+  const attemptRef = useRef(0);
+
+  const reload = useCallback(() => {
+    const attempt = attemptRef.current + 1;
+    attemptRef.current = attempt;
+
+    setStatus("loading");
+    setError(null);
+
+    fetchTables(venueId)
+      .then((loaded) => {
+        if (attemptRef.current !== attempt) return;
+        setTables(loaded);
+        setStatus("ready");
+      })
+      .catch((reason: unknown) => {
+        if (attemptRef.current !== attempt) return;
+        // Пустой зал и недоехавший зал выглядят одинаково, а означают разное:
+        // во втором случае менеджер не должен думать, что схему стёрли.
+        setError(
+          reason instanceof Error ? reason.message : "Не удалось загрузить зал",
+        );
+        setStatus("error");
+      });
+  }, [venueId]);
 
   useEffect(() => {
-    saveState(STORAGE_KEY, tables);
-  }, [tables]);
+    reload();
+  }, [reload]);
+
+  /*
+   * Локальный режим пишет всю расстановку целиком на каждое изменение —
+   * источник истины здесь сам localStorage. С узлом источник истины его БД,
+   * и запись идёт построчно в `commitTable`.
+   */
+  useEffect(() => {
+    if (!canEditStructure || status !== "ready") return;
+    saveLocal(tables);
+  }, [tables, canEditStructure, status]);
 
   const addTable = useCallback(
     (shape: TableShape) => {
@@ -105,6 +155,24 @@ export function TablesProvider({
     );
   }, []);
 
+  const commitTable = useCallback(
+    (id: UUID) => {
+      const table = tablesRef.current.find((entry) => entry.id === id);
+      if (!table) return;
+
+      persistTableLayout(venueId, table).catch((reason: unknown) => {
+        // Стол уже сдвинут на экране, и откатывать его под пальцем нельзя —
+        // менеджер решит, что не попал. Говорим, что не сохранилось.
+        setError(
+          reason instanceof Error
+            ? `Стол ${table.label} не сохранён: ${reason.message}`
+            : `Стол ${table.label} не сохранён`,
+        );
+      });
+    },
+    [venueId],
+  );
+
   const renameTable = useCallback((id: UUID, label: string) => {
     setTables((prev) =>
       prev.map((table) => (table.id === id ? { ...table, label } : table)),
@@ -118,13 +186,29 @@ export function TablesProvider({
   const value = useMemo<TablesValue>(
     () => ({
       tables,
+      status,
+      error,
+      reload,
       findTable: (id) => tables.find((table) => table.id === id),
+      canEditStructure,
       addTable,
       moveTable,
+      commitTable,
       renameTable,
       removeTable,
     }),
-    [tables, addTable, moveTable, renameTable, removeTable],
+    [
+      tables,
+      status,
+      error,
+      reload,
+      canEditStructure,
+      addTable,
+      moveTable,
+      commitTable,
+      renameTable,
+      removeTable,
+    ],
   );
 
   return (

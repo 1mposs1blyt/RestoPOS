@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
+import { useDevices } from "../state/devices";
 import {
   useNavigation,
   workRoutesFor,
@@ -9,12 +10,37 @@ import {
   type RouteName,
 } from "../app/navigation";
 import { roleLabel, useSession } from "../app/session";
+import { acquiringSimulate } from "../lib/acquiring";
+import { fiscalSimulate } from "../lib/fiscal";
 
 const TERMINAL_LABELS: Record<TerminalKind, string> = {
   pos: "Касса",
   kds: "Кухня",
   admin: "Админка",
 };
+
+/**
+ * Полоса «фискальный регистратор отключён».
+ *
+ * Висит на всех экранах, а не только на сервисном, потому что состояние
+ * забывается: тех. специалист отпустил порт под утилиту производителя и ушёл,
+ * а обнаруживает это кассир — в момент, когда гость уже стоит с деньгами.
+ * Полоса стоит между шапкой и экраном, чтобы не перекрывать содержимое
+ * и при этом попадаться на глаза при любом действии.
+ */
+function FiscalPortBanner() {
+  const { kkm } = useDevices();
+  // Предупреждаем только про ККМ: остановленные весы работе кассы не мешают.
+  if (!kkm || kkm.isRunning) return null;
+
+  return (
+    <div className="shrink-0 border-x border-b border-amber-900/60 bg-amber-950/50 px-5 py-2 text-sm text-amber-300">
+      <b>ККМ остановлена</b> — порт свободен
+      {kkm.stoppedBy ? ` (${kkm.stoppedBy})` : ""}. Чеки пробиваются,
+      но не фискализируются. Запустить — в настройке оборудования.
+    </div>
+  );
+}
 
 function useWallClock(): string {
   const [time, setTime] = useState(() => new Date());
@@ -91,6 +117,8 @@ export function AppShell({
           </button>
         </div>
       </header>
+
+      <FiscalPortBanner />
 
       <main className="relative min-h-0 flex-1 overflow-hidden bg-slate-900 border-slate-700/50 border-l border-r">
         {children}
@@ -212,7 +240,70 @@ function DevBar() {
           </DevButton>
         ))}
       </DevGroup>
+
+      <FailureScenarios />
     </div>
+  );
+}
+
+/**
+ * Сценарии отказов ККТ и эквайринга.
+ *
+ * Взводится ровно один следующий вызов устройства, после чего сценарий
+ * сбрасывается сам. Иначе кнопку пришлось бы выключать вручную, и забытый
+ * «теряй ответ» превратил бы всю дальнейшую отладку в загадку.
+ *
+ * Ветки «неизвестно» иначе видны только из `cargo test`. Увидеть их глазами
+ * на экране кассы — отдельная ценность: там решает не программа, а кассир,
+ * и текст сообщения должен быть понятен ему, а не автору кода.
+ */
+function FailureScenarios() {
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const arm = (label: string, action: () => Promise<void>) => async () => {
+    try {
+      await action();
+      setNotice(`Взведено: ${label}`);
+    } catch (error) {
+      // В браузере моста нет вовсе — это не поломка, а нормальный ответ.
+      setNotice(error instanceof Error ? error.message : "Не вышло");
+    }
+  };
+
+  return (
+    <DevGroup label={notice ?? "Отказы"}>
+      <DevButton onClick={arm("обрыв после чека", () => fiscalSimulate("lost_reply_after"))}>
+        ККТ: обрыв после
+      </DevButton>
+      <DevButton onClick={arm("обрыв до чека", () => fiscalSimulate("lost_reply_before"))}>
+        ККТ: обрыв до
+      </DevButton>
+      <DevButton
+        onClick={arm("кабель ККТ", () => fiscalSimulate("lost_reply_then_disconnect"))}
+      >
+        ККТ: кабель
+      </DevButton>
+      <DevButton onClick={arm("смена сутки", () => fiscalSimulate("age_shift"))}>
+        ККТ: сутки
+      </DevButton>
+      <DevButton onClick={arm("отказ банка", () => acquiringSimulate("declined"))}>
+        Карта: отказ
+      </DevButton>
+      <DevButton
+        onClick={arm("обрыв после списания", () =>
+          acquiringSimulate("unknown_after_approve"),
+        )}
+      >
+        Карта: обрыв после
+      </DevButton>
+      <DevButton
+        onClick={arm("кабель терминала", () =>
+          acquiringSimulate("unknown_then_disconnect"),
+        )}
+      >
+        Карта: кабель
+      </DevButton>
+    </DevGroup>
   );
 }
 
@@ -232,7 +323,12 @@ function DevButton({
   onClick,
   children,
 }: {
-  active: boolean;
+  /**
+   * Подсвечена ли кнопка. Необязательна: у переключателей (терминал, тариф)
+   * состояние есть, а у разовых действий вроде сценариев отказа его нет —
+   * они срабатывают и гаснут.
+   */
+  active?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {

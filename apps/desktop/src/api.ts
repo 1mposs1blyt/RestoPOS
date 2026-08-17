@@ -13,12 +13,32 @@ import { loadState, saveState } from "./lib/storage";
  */
 
 const TOKEN_KEY = "session.token";
+const VENUE_KEY = "session.venueId";
 
 const NODE_URL = import.meta.env.VITE_NODE_URL ?? "";
+
+/**
+ * Идентификатор терминала. На проде приезжает с его регистрацией и лежит
+ * в настройках устройства; здесь берётся из окружения, чтобы одну и ту же
+ * сборку можно было запустить как разные кассы.
+ */
+const TERMINAL_ID = import.meta.env.VITE_TERMINAL_ID ?? "";
 
 /** Настроен ли узел. Если нет — работаем на демо-данных терминала. */
 export function isNodeConfigured(): boolean {
   return NODE_URL.length > 0;
+}
+
+/**
+ * Заведение текущей сессии. Узел режет по нему выборки, поэтому оно уходит
+ * заголовком на каждом запросе — а известно только после входа.
+ */
+export function sessionVenueId(): string | null {
+  return loadState<string | null>(VENUE_KEY, null);
+}
+
+export function setSessionVenueId(venueId: string | null): void {
+  saveState(VENUE_KEY, venueId);
 }
 
 export function sessionToken(): string | null {
@@ -44,6 +64,8 @@ function ensure(kind: TerminalKind): { client: ApiClient; api: NodeApi } {
   const client = new ApiClient({
     baseUrl: NODE_URL,
     terminalKind: kind,
+    terminalId: TERMINAL_ID || undefined,
+    getVenueId: sessionVenueId,
     getToken: sessionToken,
     onUnauthorized: () => setSessionToken(null),
     // Узел в локальной сети отвечает мгновенно; всё, что дольше, — это

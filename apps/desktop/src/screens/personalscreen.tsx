@@ -29,7 +29,8 @@ export function PersonalScreen() {
   const [tab, setTab] = useState<Tab>("results");
   const { staff } = useSession();
   const { back } = useNavigation();
-  const { myShift, workedMinutes, closeMyShift } = useShifts();
+  const { myShift, tracksAttendance, workedMinutes, closeMyShift, openMyShift } =
+    useShifts();
   const { state, orderTotal } = useOrders();
 
   /**
@@ -78,7 +79,7 @@ export function PersonalScreen() {
             {staff ? roleLabel(staff.role) : ""}
             {myShift
               ? ` · смена открыта ${formatTime(myShift.openedAt)}`
-              : " · личная смена закрыта"}
+              : " · смена не открыта"}
           </p>
         </div>
         <TabButton active={tab === "results"} onClick={() => setTab("results")}>
@@ -117,7 +118,7 @@ export function PersonalScreen() {
           Назад
         </button>
         <div className="flex-1" />
-        {myShift && (
+        {myShift ? (
           <button
             type="button"
             onClick={closeMyShift}
@@ -125,6 +126,16 @@ export function PersonalScreen() {
           >
             Закрыть личную смену
           </button>
+        ) : (
+          tracksAttendance && (
+            <button
+              type="button"
+              onClick={openMyShift}
+              className="min-h-14 bg-emerald-600 px-6 text-sm font-black tracking-wide text-white transition active:bg-emerald-500"
+            >
+              Открыть смену
+            </button>
+          )
         )}
       </footer>
     </div>

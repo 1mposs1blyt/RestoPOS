@@ -8,7 +8,13 @@ import type {
 } from "@restopos/shared-types";
 import { canApprove, permissionsOf } from "@restopos/shared-types";
 import { ApiError } from "@restopos/api-client";
-import { isNodeConfigured, nodeApi, setSessionToken } from "../api";
+import {
+  isNodeConfigured,
+  nodeApi,
+  setSessionToken,
+  setSessionVenueId,
+} from "../api";
+import { loadState, saveState } from "../lib/storage";
 
 /**
  * Откуда терминал берёт сотрудника и его права.
@@ -122,7 +128,38 @@ export function staffRoster(): Staff[] {
 }
 
 export function findStaff(staffId: UUID): Staff | undefined {
-  return DEMO_STAFF.find((entry) => entry.staff.id === staffId)?.staff;
+  return (
+    DEMO_STAFF.find((entry) => entry.staff.id === staffId)?.staff ??
+    knownStaff()[staffId]
+  );
+}
+
+/**
+ * Кто уже входил на этом терминале.
+ *
+ * Нужно затем, что заказы, явки и журнал хранят один `staffId`, а имя ищут
+ * справочником — и в режиме узла демо-справочник не знает никого. Без этого
+ * кэша управляющий видел в отчёте по официантам не фамилию, а UUID: строка
+ * формально верная и совершенно нечитаемая.
+ *
+ * Маршрута `GET /staff` у узла пока нет, поэтому запоминаем тех, кто прикладывал
+ * PIN: ровно они и создают заказы на этом терминале. Появится маршрут — кэш
+ * заменится списком с узла, а места вызова не изменятся.
+ *
+ * Имя обновляется на каждом входе: переименовали сотрудника на узле — оно
+ * приедет само, а старая копия в заказах не хранится (её там и нет).
+ */
+const KNOWN_STAFF_KEY = "staff.known";
+
+function knownStaff(): Record<UUID, Staff> {
+  return loadState<Record<UUID, Staff>>(KNOWN_STAFF_KEY, {});
+}
+
+function rememberStaff(staff: Staff): void {
+  const known = knownStaff();
+  const stored = known[staff.id];
+  if (stored?.fullName === staff.fullName && stored.role === staff.role) return;
+  saveState(KNOWN_STAFF_KEY, { ...known, [staff.id]: staff });
 }
 
 /**
@@ -131,6 +168,51 @@ export function findStaff(staffId: UUID): Staff | undefined {
  * Отказы наверх уходят исключением с человекочитаемым текстом: `PinPad`
  * по отклонённому промису подсветит поле, а `BlockScreen` покажет причину.
  */
+/**
+ * Что узел отдаёт **на самом деле** — форма его ответа, а не наша.
+ *
+ * Она пока расходится с `SessionInfo` из `api-client`, который написан
+ * по контракту (`docs/plan.md` §4.1). Держим разницу здесь, в единственном
+ * месте, знающем про узел, и явно перечисляем расхождения — чтобы их было
+ * видно и чтобы их можно было убрать, а не забыть.
+ */
+interface NodeSession {
+  staff: Staff;
+  permissions: Permission[];
+  venue: { id: UUID; name: string; serviceMode: Venue["serviceMode"] };
+  terminal: { id: UUID; kind: string; label: string };
+  /** Контракт ждёт `entitlements: { planCode, features }`. */
+  plan: { code: PlanCode; name: string };
+  /** Контракт ждёт `shift`. */
+  currentShift: { id: UUID; openedAt: string } | null;
+  activeStaffShift: { id: UUID } | null;
+  availableRoutes: string[];
+  /** Токена узел пока не выдаёт вовсе — авторизации на нём ещё нет. */
+  token?: string;
+}
+
+/**
+ * Модули тарифа по его коду.
+ *
+ * Узел отдаёт только код тарифа, без списка фич, поэтому раскрываем его здесь
+ * по той же таблице, что и локальный режим. Когда узел начнёт отдавать
+ * `entitlements` целиком, это место исчезнет — оно временное и намеренно
+ * дублирует `app/entitlements.tsx`, а не притворяется источником истины.
+ */
+function featuresOfPlan(code: PlanCode): FeatureCode[] {
+  const standard: FeatureCode[] = ["warehouse", "kds", "reports", "delivery"];
+  if (code === "start") return [];
+  if (code === "standard") return standard;
+  return [
+    ...standard,
+    "egais",
+    "loyalty",
+    "analytics",
+    "suppliers",
+    "multi_venue",
+  ];
+}
+
 export async function authenticate(pin: string): Promise<AuthResult> {
   if (!isNodeConfigured()) {
     const staff = demoStaff(pin);
@@ -138,13 +220,28 @@ export async function authenticate(pin: string): Promise<AuthResult> {
   }
 
   try {
-    const session = await nodeApi("pos").signIn(pin);
-    setSessionToken(session.token);
+    const session = (await nodeApi("pos").signIn(pin)) as unknown as NodeSession;
+    // Токена узел пока не выдаёт; когда начнёт — строка заработает сама.
+    setSessionToken(session.token ?? null);
+    // Заведение уходит заголовком на всех следующих запросах.
+    setSessionVenueId(session.venue.id);
+    // Чтобы отчёты и табель показывали фамилию, а не идентификатор.
+    rememberStaff(session.staff);
+
     return {
       staff: session.staff,
       permissions: new Set(session.permissions),
-      venue: session.venue,
-      entitlements: session.entitlements,
+      venue: {
+        ...session.venue,
+        // Организация в ответе не приходит: узел работает в одном заведении,
+        // и мультитенантность режется на его стороне.
+        organizationId: "",
+        address: null,
+      },
+      entitlements: {
+        planCode: session.plan.code,
+        features: featuresOfPlan(session.plan.code),
+      },
     };
   } catch (reason) {
     throw new Error(describeAuthError(reason));
@@ -172,8 +269,26 @@ export async function approve(
   }
 
   try {
-    const grant = await nodeApi("pos").requestOverride(pin, permission, entityId);
-    return grant.approvedBy;
+    const grant = (await nodeApi("pos").requestOverride(
+      pin,
+      permission,
+      entityId,
+    )) as unknown as { approvedBy?: Staff; temporaryToken?: string };
+
+    /*
+     * Узел пока отвечает только `{ temporaryToken, expiresInSeconds }` и не
+     * говорит, КТО подтвердил. Журнал опасных операций без этого бессмыслен:
+     * «сторно подтверждено» без имени не отвечает ни на один вопрос при разборе
+     * смены. Поэтому подставляем заглушку и не притворяемся, что знаем имя.
+     */
+    return (
+      grant.approvedBy ?? {
+        id: "unknown",
+        organizationId: "",
+        fullName: "подтверждено на узле",
+        role: "manager",
+      }
+    );
   } catch (reason) {
     throw new Error(describeAuthError(reason));
   }

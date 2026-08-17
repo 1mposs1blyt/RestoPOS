@@ -7,6 +7,8 @@ export type {
   CreateOrderRequest,
   Entitlements,
   MenuSnapshot,
+  NodeOrderSummary,
+  NodeTable,
   OpenShiftResult,
   OrderSnapshot,
   OverrideGrant,

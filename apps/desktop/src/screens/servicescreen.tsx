@@ -4,6 +4,8 @@ import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
 import { useSession } from "../app/session";
 import { clearAll } from "../lib/storage";
+import { useNavigation } from "../app/navigation";
+import { useDevices } from "../state/devices";
 
 /**
  * Сервисный экран терминала — единственное, что доступно роли `support`.
@@ -70,10 +72,57 @@ export function ServiceScreen() {
           />
         </Section>
 
+        <EquipmentSection />
         <Diagnostics />
         <DangerZone />
       </div>
     </div>
+  );
+}
+
+/**
+ * Настройка оборудования.
+ *
+ * Ведёт на отдельный экран «Список устройств» — как в «Инструментах» iiko,
+ * а не блоком здесь. Причина не в подражании: у устройства десяток настроек
+ * и своя карточка с разделами, и втиснуть её в общий сервисный экран рядом
+ * с типом терминала и тарифом значит получить полотно, по которому листают
+ * в поисках нужного.
+ */
+function EquipmentSection() {
+  const { navigate } = useNavigation();
+  const { devices, kkm } = useDevices();
+  const stopped = devices.filter((device) => !device.isRunning);
+
+  return (
+    <Section
+      title="Настройка оборудования"
+      hint="ККМ, принтеры и весы: подключение, запуск и освобождение портов"
+    >
+      <div className="w-full space-y-3">
+        <div className="flex flex-wrap gap-4 text-sm">
+          <span className="text-slate-400">
+            Устройств: <b className="text-slate-200">{devices.length}</b>
+          </span>
+          <span className="text-slate-400">
+            ККМ:{" "}
+            <b className="text-slate-200">{kkm ? kkm.model : "не настроена"}</b>
+          </span>
+          {stopped.length > 0 && (
+            <span className="text-amber-400">
+              остановлено: <b>{stopped.length}</b> — порты свободны
+            </span>
+          )}
+        </div>
+        <button
+          type="button"
+          onClick={() => navigate({ name: "devices" })}
+          className="min-h-14 w-full rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-200 transition active:bg-slate-700"
+        >
+          Открыть список устройств
+        </button>
+      </div>
+    </Section>
   );
 }
 

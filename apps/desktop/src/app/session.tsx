@@ -96,7 +96,7 @@ const STATION_KEY = "terminal.stationId";
 const EMPTY_PERMISSIONS: ReadonlySet<Permission> = new Set<Permission>();
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const { features } = useEntitlements();
+  const { features, setPlan } = useEntitlements();
   const [staff, setStaff] = useState<Staff | null>(null);
   /*
    * Права держим отдельным состоянием, а не выводим из роли на месте: с узлом
@@ -111,6 +111,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [serviceMode, setServiceModeState] = useState<ServiceMode>(() =>
     loadState<ServiceMode>(SERVICE_MODE_KEY, DEMO_VENUE.serviceMode),
   );
+  /** Заведение. С узлом приезжает со входом, без узла — демо-значение. */
+  const [venue, setVenue] = useState<Venue>(DEMO_VENUE);
   const [stationId, setStationIdState] = useState<UUID | null>(() =>
     loadState<UUID | null>(STATION_KEY, null),
   );
@@ -148,8 +150,23 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
       setStaff(authenticated.staff);
       setPermissions(authenticated.permissions);
+
+      /*
+       * Заведение и тариф приезжают с узла и замещают демо-значения. Пока узла
+       * нет, оба поля пусты, и терминал продолжает работать на своих —
+       * поэтому здесь проверка, а не безусловное присваивание.
+       */
+      if (authenticated.venue) {
+        setVenue(authenticated.venue);
+        // Режим обслуживания — свойство заведения, и с узлом он приходит
+        // оттуда, а не из локальной настройки сервисного экрана.
+        setServiceModeState(authenticated.venue.serviceMode);
+      }
+      if (authenticated.entitlements) {
+        setPlan(authenticated.entitlements.planCode);
+      }
     },
-    [terminalKind, serviceMode, features],
+    [terminalKind, serviceMode, features, setPlan],
   );
 
   const lock = useCallback(() => {
@@ -179,7 +196,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<SessionValue>(
     () => ({
-      venue: { ...DEMO_VENUE, serviceMode },
+      // Режим обслуживания держим отдельно: его переключает сервисный экран
+      // в демо-режиме, а с узлом он приходит с заведением.
+      venue: { ...venue, serviceMode },
       shiftId: DEMO_SHIFT_ID,
       terminalId: DEMO_TERMINAL_ID,
       staff,
@@ -196,6 +215,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       hasRole,
     }),
     [
+      venue,
       staff,
       permissions,
       terminalKind,

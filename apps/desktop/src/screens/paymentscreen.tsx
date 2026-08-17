@@ -1,11 +1,15 @@
 import { useMemo, useState } from "react";
 import type { UUID } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
+import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
+import { DISCOUNT_TYPES } from "../data/discount-types";
 import { PAYMENT_TYPES, findPaymentType } from "../data/payment-types";
 import { findMenuItem } from "../state/menu";
+import { useCheckout } from "../state/checkout";
 import { useOrders, type PaymentDraft } from "../state/orders";
+import { CheckoutOverlay } from "./checkoutoverlay";
 import { useShifts } from "../state/shifts";
 import { useTables } from "../state/tables";
 import {
@@ -45,15 +49,48 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
   const { back } = useNavigation();
   const { staff } = useSession();
   const { cashShift } = useShifts();
-  const { state, itemsOfOrder, orderTotal, payOrder } = useOrders();
+  const {
+    state,
+    itemsOfOrder,
+    orderTotals,
+    discountsOfOrder,
+    applyDiscount,
+    removeDiscount,
+  } = useOrders();
+  const { can, isPossible, authorize } = useAccess();
   const { tables } = useTables();
+  const { pay, isBusy, isNonFiscal } = useCheckout();
 
   const order = state.orders[orderId];
   const items = itemsOfOrder(orderId).filter((item) => item.status !== "voided");
-  const total = order ? orderTotal(orderId) : ZERO_MONEY;
+  const totals = order
+    ? orderTotals(orderId)
+    : { subtotal: ZERO_MONEY, discount: ZERO_MONEY, surcharge: ZERO_MONEY, total: ZERO_MONEY };
+  const total = totals.total;
+  const appliedDiscounts = discountsOfOrder(orderId);
 
   const [lines, setLines] = useState<Line[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [isDiscountOpen, setDiscountOpen] = useState(false);
+
+  /**
+   * Скидку применяем до набора оплаты. Иначе строки, уже погасившие старый
+   * итог, останутся с прежними суммами: гость доплатит или переплатит,
+   * а расхождение вылезет при сверке кассы.
+   */
+  const handleDiscount = (discountTypeId: string, needsApproval: boolean) => {
+    setDiscountOpen(false);
+    if (!needsApproval && can("order.discount")) {
+      applyDiscount(orderId, discountTypeId);
+      return;
+    }
+    authorize("order.discount", `Заказ № ${order?.number ?? "—"}`).then(
+      (approval) =>
+        applyDiscount(orderId, discountTypeId, approval.approvedBy?.id ?? null),
+      // Отказались подтверждать — штатный путь, делать нечего.
+      () => undefined,
+    );
+  };
 
   // Вся денежная арифметика экрана — в `lib/payment-split.ts`: она проверяется
   // тестами, а не кликами по кассе.
@@ -72,9 +109,19 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
 
   const addLine = (paymentTypeId: UUID) => {
     const id = crypto.randomUUID();
-    // Новая строка сразу берёт на себя весь остаток: в большинстве чеков
-    // способ один, и лишнего ввода быть не должно.
-    setLines((prev) => [...prev, { id, paymentTypeId, tendered: dueFor(prev) }]);
+    /*
+     * Безналичная строка сразу берёт остаток: переплатить картой нельзя,
+     * и других осмысленных сумм там не бывает — в большинстве чеков способ
+     * один, и лишнего ввода быть не должно.
+     *
+     * Наличная начинается с нуля. У неё поле значит не «сколько списать»,
+     * а «сколько гость положил на стол», и номиналы к нему прибавляются.
+     * Автоподстановка остатка превращала «+1000» в 1456: кассир, вводящий
+     * полученную тысячу, получал чужую сумму и неверную сдачу.
+     * Ровный расчёт делается одним касанием «Точная сумма».
+     */
+    const initial = canOverpay(paymentTypeId) ? ZERO_MONEY : dueFor(lines);
+    setLines((prev) => [...prev, { id, paymentTypeId, tendered: initial }]);
     setActiveId(id);
   };
 
@@ -126,8 +173,16 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
     if (activeId === id) setActiveId(null);
   };
 
-  const handlePay = () => {
-    if (!isSettled) return;
+  /**
+   * Расчёт целиком ведёт `state/checkout.tsx`: эквайринг, чек, закрытие
+   * заказа — в этом порядке. Экран отдаёт ему строки и ждёт исход.
+   *
+   * Уходим назад только по `done`. На отказе и на «требует человека» экран
+   * остаётся с набранными строками: кассир должен видеть, что именно он
+   * пробивал, а не гадать, восстанавливая сумму заново.
+   */
+  const handlePay = async () => {
+    if (!isSettled || isBusy) return;
     const drafts: PaymentDraft[] = lines
       .map<PaymentDraft>((line) => ({
         paymentTypeId: line.paymentTypeId,
@@ -140,8 +195,8 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
       // ввода, а не платёж. В чек её класть незачем.
       .filter((draft) => compareMoney(draft.amount, ZERO_MONEY) > 0);
 
-    payOrder(orderId, drafts);
-    back();
+    const result = await pay(orderId, drafts);
+    if (result.stage === "done") back();
   };
 
   if (!order) {
@@ -178,6 +233,15 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
         </p>
       )}
 
+      {isNonFiscal && (
+        // Молчать об этом нельзя: закрытый заказ без фискального документа
+        // выглядит на экране точно так же, как обычный, а по документам
+        // продажи не было.
+        <p className="shrink-0 border-b border-slate-700 bg-slate-800/60 px-5 py-3 text-sm text-slate-400">
+          ККМ не заведена — нефискальный режим. Заказ закроется без чека.
+        </p>
+      )}
+
       <div className="flex min-h-0 flex-1">
         {/* Состав чека */}
         <section className="flex w-80 shrink-0 flex-col border-r border-slate-800 bg-slate-950 xl:w-96">
@@ -201,12 +265,60 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
               );
             })}
           </ul>
+          {/* Применённые скидки видно строками: «Скидка 100 ₽» без указания,
+              откуда она взялась, при разборе смены ничего не объясняет. */}
+          {appliedDiscounts.length > 0 && (
+            <ul className="shrink-0 divide-y divide-slate-900 border-t border-slate-800">
+              {appliedDiscounts.map((discount) => (
+                <li
+                  key={discount.id}
+                  className="flex min-h-12 items-center gap-2 px-5"
+                >
+                  <span className="flex-1 truncate text-xs text-slate-400">
+                    {discount.label}
+                  </span>
+                  <span
+                    className={cn(
+                      "text-xs tabular-nums",
+                      discount.kind === "discount"
+                        ? "text-rose-400"
+                        : "text-emerald-400",
+                    )}
+                  >
+                    {discount.kind === "discount" ? "−" : "+"}
+                    {formatMoney(discount.amount)}
+                  </span>
+                  <button
+                    type="button"
+                    aria-label="Убрать скидку"
+                    onClick={() => removeDiscount(discount.id)}
+                    className="flex h-11 w-11 items-center justify-center text-slate-600 transition active:bg-slate-800"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+
           <dl className="shrink-0 divide-y divide-slate-900 border-t border-slate-800">
-            <SumRow label="Подытог" value={formatMoney(total)} />
-            <SumRow label="Скидка" value={formatMoney(ZERO_MONEY)} />
-            <SumRow label="Надбавка" value={formatMoney(ZERO_MONEY)} />
-            <SumRow label="Итого" value={formatMoney(total)} strong />
+            <SumRow label="Подытог" value={formatMoney(totals.subtotal)} />
+            <SumRow label="Скидка" value={formatMoney(totals.discount)} />
+            <SumRow label="Надбавка" value={formatMoney(totals.surcharge)} />
+            <SumRow label="Итого" value={formatMoney(totals.total)} strong />
           </dl>
+
+          <div className="shrink-0 border-t border-slate-800 p-3">
+            <button
+              type="button"
+              // Право побиваемое: нет своего — ведём в подтверждение, а не гасим.
+              disabled={!isPossible("order.discount") || lines.length > 0}
+              onClick={() => setDiscountOpen(true)}
+              className="min-h-14 w-full rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition active:bg-slate-700 disabled:opacity-40"
+            >
+              {lines.length > 0 ? "Сначала уберите строки оплаты" : "Скидка / надбавка"}
+            </button>
+          </div>
         </section>
 
         {/* Строки оплаты */}
@@ -359,13 +471,80 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
         <div className="flex-1" />
         <button
           type="button"
-          disabled={!isSettled || !cashShift}
+          disabled={!isSettled || !cashShift || isBusy}
           onClick={handlePay}
           className="min-h-16 min-w-64 bg-emerald-600 px-8 text-lg font-black tracking-wide text-white transition active:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600"
         >
-          Оплатить
+          {isBusy ? "Идёт расчёт…" : "Оплатить"}
         </button>
       </footer>
+
+      {isDiscountOpen && (
+        <DiscountDialog
+          onPick={handleDiscount}
+          onCancel={() => setDiscountOpen(false)}
+        />
+      )}
+
+      <CheckoutOverlay />
+    </div>
+  );
+}
+
+/** Выбор скидки из справочника. Свободный ввод сюда не входит намеренно:
+ *  скидка «от руки» не даёт свести отчёт «кто и за что скидывал». */
+function DiscountDialog({
+  onPick,
+  onCancel,
+}: {
+  onPick: (discountTypeId: string, needsApproval: boolean) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-6">
+      <div className="w-[30rem] space-y-3 rounded-2xl border border-slate-700 bg-slate-900 p-5">
+        <h3 className="text-center text-lg font-black text-slate-200">
+          Скидка и надбавка
+        </h3>
+        <div className="space-y-2">
+          {[...DISCOUNT_TYPES]
+            .filter((type) => type.isActive)
+            .sort((a, b) => a.sortOrder - b.sortOrder)
+            .map((type) => (
+              <button
+                key={type.id}
+                type="button"
+                onClick={() => onPick(type.id, type.requiresApproval)}
+                className="flex min-h-16 w-full items-center gap-3 rounded-xl border border-slate-700 bg-slate-800 px-4 text-left transition active:bg-slate-700"
+              >
+                <span className="flex-1 text-sm font-bold text-slate-200">
+                  {type.label}
+                </span>
+                {type.requiresApproval && (
+                  <span className="rounded-md bg-amber-950/60 px-2 py-1 text-xs font-bold text-amber-300">
+                    с подтверждением
+                  </span>
+                )}
+                <span
+                  className={cn(
+                    "text-sm font-black tabular-nums",
+                    type.kind === "discount" ? "text-rose-400" : "text-emerald-400",
+                  )}
+                >
+                  {type.kind === "discount" ? "−" : "+"}
+                  {type.mode === "percent" ? `${type.value}%` : type.value}
+                </span>
+              </button>
+            ))}
+        </div>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="min-h-14 w-full rounded-xl border border-slate-700 text-sm font-bold text-slate-300 transition active:bg-slate-800"
+        >
+          Отмена
+        </button>
+      </div>
     </div>
   );
 }

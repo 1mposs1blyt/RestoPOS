@@ -3,12 +3,14 @@ import type { UUID } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
-import { useOrders } from "../state/orders";
+import { useSession } from "../app/session";
+import { useHallOccupancy } from "../state/occupancy";
 import {
   findDuplicateLabels,
   useTables,
   type TableLayout,
   type TableShape,
+  type TablesStatus,
 } from "../state/tables";
 import { formatMoney } from "../lib/money";
 import { formatElapsed, useNow } from "../lib/useNow";
@@ -45,9 +47,30 @@ interface DragState {
 export function TableScheme() {
   const { navigate } = useNavigation();
   const { can } = useAccess();
-  const { tables, addTable, moveTable, removeTable, renameTable } = useTables();
-  const { tableStatus, orderOfTable, orderTotal } = useOrders();
+  const {
+    tables,
+    status,
+    error,
+    reload,
+    canEditStructure,
+    addTable,
+    moveTable,
+    commitTable,
+    removeTable,
+    renameTable,
+  } = useTables();
+  const { venue } = useSession();
+  const { occupancyOf, isRemote, error: occupancyError } =
+    useHallOccupancy(venue.id);
   const now = useNow();
+
+  /*
+   * Стол занят заказом, который ведётся на узле. Экран заказа к узлу ещё
+   * не подключён, поэтому открывать его нельзя: локальный стор про этот заказ
+   * не знает и завёл бы рядом второй. Два заказа на одном столе — это еда,
+   * за которую в итоге никто не заплатит.
+   */
+  const [blockedTable, setBlockedTable] = useState<string | null>(null);
 
   // Дубли могли накопиться раньше, когда номер брался из длины массива.
   // Молча перенумеровывать чужую расстановку нельзя — показываем их менеджеру.
@@ -138,6 +161,9 @@ export function TableScheme() {
   const handlePointerUp = (event: React.PointerEvent<HTMLDivElement>) => {
     if (!drag) return;
     event.currentTarget.releasePointerCapture(event.pointerId);
+    // Сохраняем один раз, когда палец отпущен: во время перетаскивания
+    // положение меняется десятки раз в секунду.
+    commitTable(drag.tableId);
     setDrag(null);
   };
 
@@ -154,10 +180,31 @@ export function TableScheme() {
               Повторяются номера: {[...duplicates].join(", ")}
             </span>
           )}
+          {status === "loading" && (
+            <span className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-400">
+              Загрузка…
+            </span>
+          )}
+          {error && (
+            <button
+              type="button"
+              onClick={reload}
+              className="min-h-11 rounded-md bg-rose-950/70 px-3 text-xs font-semibold text-rose-300 active:scale-95"
+            >
+              {error} — повторить
+            </button>
+          )}
+          {occupancyError && (
+            // Схема при этом остаётся на экране с прошлыми данными: мигающий
+            // зал в час пик хуже, чем зал, отставший на десять секунд.
+            <span className="rounded-md bg-amber-950/60 px-2 py-1 text-xs text-amber-300">
+              Занятость не обновляется
+            </span>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
-          {designMode && (
+          {designMode && canEditStructure && (
             <div className="flex gap-2 rounded-lg border border-slate-700 bg-slate-950/50 p-1">
               <ShapeButton shape="rectangle" onAdd={addTable}>
                 + Прямоугольный
@@ -169,6 +216,16 @@ export function TableScheme() {
                 + Круглый
               </ShapeButton>
             </div>
+          )}
+
+          {designMode && !canEditStructure && (
+            // Узел умеет сохранять только геометрию: маршрутов на создание
+            // и удаление стола у него нет. Молча показывать кнопки, после
+            // которых зал вернётся прежним, нельзя.
+            <span className="max-w-64 text-xs leading-tight text-slate-500">
+              Столы двигаются и сохраняются на узле. Добавление и удаление —
+              когда узел научится.
+            </span>
           )}
 
           {canEditLayout ? (
@@ -205,8 +262,10 @@ export function TableScheme() {
         }}
       >
         {tables.map((table) => {
-          const order = orderOfTable(table.id);
-          const status = tableStatus(table.id);
+          const occupancy = occupancyOf(table.id);
+          // Не `status`: так называется состояние загрузки всего зала, и две
+          // разные величины под одним именем в одном файле — заготовка ошибки.
+          const isBusy = occupancy !== null;
           const isDragging = drag?.tableId === table.id;
           const isDuplicate = duplicates.has(table.label);
           const { left, top } = positionOf(table);
@@ -219,7 +278,12 @@ export function TableScheme() {
               onPointerUp={handlePointerUp}
               onPointerCancel={handlePointerUp}
               onClick={() => {
-                if (!designMode) navigate({ name: "order", tableId: table.id });
+                if (designMode) return;
+                if (isRemote(table.id)) {
+                  setBlockedTable(table.label);
+                  return;
+                }
+                navigate({ name: "order", tableId: table.id });
               }}
               style={{
                 position: "absolute",
@@ -238,7 +302,7 @@ export function TableScheme() {
                     : isDragging
                       ? "cursor-grabbing border-orange-400 bg-orange-500/20 shadow-lg shadow-orange-500/10"
                       : "cursor-grab border-orange-500/40 bg-orange-500/5 hover:border-orange-400 hover:bg-orange-500/10"
-                  : status === "occupied"
+                  : isBusy
                     ? "cursor-pointer border-amber-500/60 bg-amber-500/10 hover:border-amber-400 hover:bg-amber-500/20"
                     : "cursor-pointer border-emerald-500/50 bg-emerald-500/5 hover:border-emerald-400 hover:bg-emerald-500/15",
               )}
@@ -252,7 +316,7 @@ export function TableScheme() {
                 <span className="mb-0.5 text-xs font-medium uppercase tracking-wider text-slate-500">
                   Стол
                 </span>
-                {designMode ? (
+                {designMode && canEditStructure ? (
                   // Номер правится прямо на схеме: иначе развести накопившиеся
                   // дубли можно только удалив стол вместе с его местом.
                   <input
@@ -274,33 +338,40 @@ export function TableScheme() {
                   <span
                     className={cn(
                       "text-lg",
-                      status === "occupied"
-                        ? "text-amber-400"
-                        : "text-emerald-400",
+                      isBusy ? "text-amber-400" : "text-emerald-400",
                     )}
                   >
                     {table.label}
                   </span>
                 )}
-                {!designMode && order && (
+                {!designMode && occupancy && (
                   <>
-                    <span className="mt-1 text-[11px] font-semibold tabular-nums text-slate-300">
-                      {formatMoney(orderTotal(order.id))}
+                    {/* Сумма — только когда источник её действительно знает.
+                        Узел отдаёт 0.00 константой, и «0 ₽» на занятом столе
+                        официант прочтёт как «ничего не заказано». */}
+                    {occupancy.total !== null && (
+                      <span className="mt-1 text-[11px] font-semibold tabular-nums text-slate-300">
+                        {formatMoney(occupancy.total)}
+                      </span>
+                    )}
+                    <span className="text-[10px] tabular-nums text-slate-500">
+                      {formatElapsed(occupancy.createdAt, now)}
                     </span>
                     <span className="text-[10px] tabular-nums text-slate-500">
-                      {formatElapsed(order.createdAt, now)}
+                      {occupancy.guestCount} гост
+                      {guestSuffix(occupancy.guestCount)}
                     </span>
                   </>
                 )}
               </div>
 
-              {designMode && (
+              {designMode && canEditStructure && (
                 <button
                   type="button"
                   // Стол с активным заказом удалять нельзя: заказ остался бы
                   // без стола — из зала до него не добраться, а значит его
                   // не закрыть и не оплатить. Сначала закрывают счёт.
-                  disabled={Boolean(order)}
+                  disabled={Boolean(occupancy)}
                   onClick={(event) => {
                     event.stopPropagation();
                     removeTable(table.id);
@@ -310,17 +381,19 @@ export function TableScheme() {
                   // по мелкому крестику стоит дороже, чем занятый угол.
                   className={cn(
                     "absolute -right-3 -top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full border-2 border-slate-950 text-sm font-black shadow-md",
-                    order
+                    occupancy
                       ? "cursor-not-allowed bg-slate-700 text-slate-500"
                       : "bg-rose-500 text-white hover:bg-rose-600 active:scale-90",
                   )}
                   aria-label={
-                    order
+                    occupancy
                       ? `Стол ${table.label} нельзя удалить: есть открытый заказ`
                       : `Удалить стол ${table.label}`
                   }
                   title={
-                    order ? "Сначала закройте заказ на этом столе" : undefined
+                    occupancy
+                      ? "Сначала закройте заказ на этом столе"
+                      : undefined
                   }
                 >
                   ✕
@@ -332,17 +405,73 @@ export function TableScheme() {
 
         {tables.length === 0 && (
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-slate-600">
-            <span className="mb-2 text-4xl">🍽️</span>
-            <p className="text-sm">
-              {canEditLayout
-                ? "На холсте пока нет столов — включите режим конструктора."
-                : "Схема зала ещё не настроена."}
-            </p>
+            <span className="mb-2 text-4xl">{status === "error" ? "🔌" : "🍽️"}</span>
+            <p className="text-sm">{emptyHint(status, canEditLayout, canEditStructure)}</p>
           </div>
         )}
       </div>
+
+      {blockedTable && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-6">
+          <div className="w-96 space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-8 text-center shadow-2xl">
+            <span className="text-4xl">🔒</span>
+            <h2 className="text-lg font-black text-slate-100">
+              Стол {blockedTable} занят заказом с узла
+            </h2>
+            <p className="text-sm leading-snug text-slate-400">
+              Зал уже читает занятость из базы заведения, а экран заказа
+              к узлу ещё не подключён. Открыть его здесь значит завести рядом
+              второй счёт на тот же стол.
+            </p>
+            <button
+              type="button"
+              onClick={() => setBlockedTable(null)}
+              className="min-h-14 w-full rounded-xl bg-slate-800 text-sm font-bold text-slate-200 transition hover:bg-slate-700 active:scale-95"
+            >
+              Понятно
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
+}
+
+/** «1 гость», «2 гостя», «5 гостей» — зал читают мельком, и рябь в тексте мешает. */
+function guestSuffix(count: number): string {
+  const tail = count % 100;
+  if (tail >= 11 && tail <= 14) return "ей";
+  switch (count % 10) {
+    case 1:
+      return "ь";
+    case 2:
+    case 3:
+    case 4:
+      return "я";
+    default:
+      return "ей";
+  }
+}
+
+/**
+ * Что написать на пустом холсте.
+ *
+ * Пустой зал, недоехавший зал и зал, который ещё грузится, выглядят одинаково,
+ * а означают разное: в двух случаях из трёх менеджеру не надо ничего делать,
+ * и предлагать ему «включите конструктор» — это отправить его исправлять
+ * то, что не сломано.
+ */
+function emptyHint(
+  status: TablesStatus,
+  canEditLayout: boolean,
+  canEditStructure: boolean,
+): string {
+  if (status === "loading") return "Загружаем схему зала…";
+  if (status === "error") return "Схема зала не загрузилась — узел не ответил.";
+  if (!canEditStructure) return "В этом заведении столы ещё не заведены.";
+  return canEditLayout
+    ? "На холсте пока нет столов — включите режим конструктора."
+    : "Схема зала ещё не настроена.";
 }
 
 function ShapeButton({
