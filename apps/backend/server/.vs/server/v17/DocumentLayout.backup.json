@@ -3,8 +3,48 @@
   "WorkspaceRootPath": "D:\\RestoPOS\\apps\\backend\\server\\",
   "Documents": [
     {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\data\\schema.sql||{CC5D8DF0-88F4-4BB2-9DBB-B48CEE65C30A}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:data\\schema.sql||{CC5D8DF0-88F4-4BB2-9DBB-B48CEE65C30A}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\repos\\menurepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:repos\\menurepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\repos\\imenurepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:repos\\imenurepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\controllers\\menucontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:controllers\\menucontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
       "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\dtos\\menudto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:dtos\\menudto.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\repos\\authrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:repos\\authrepository.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\controllers\\sessioncontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:controllers\\sessioncontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\controllers\\hallcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:controllers\\hallcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:controllers\\authcontroller.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|d:\\restopos\\apps\\backend\\server\\data\\schema.sql||{CC5D8DF0-88F4-4BB2-9DBB-B48CEE65C30A}|CodeFrame",
+      "RelativeMoniker": "D:0:0:{D53A82C5-3F10-409D-83D4-9C9F814B17E4}|server.csproj|solutionrelative:data\\schema.sql||{CC5D8DF0-88F4-4BB2-9DBB-B48CEE65C30A}|CodeFrame"
     }
   ],
   "DocumentGroupContainers": [
@@ -23,12 +63,128 @@
             {
               "$type": "Document",
               "DocumentIndex": 0,
+              "Title": "schema.sql ",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Data\\schema.sql",
+              "RelativeDocumentMoniker": "Data\\schema.sql",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Data\\schema.sql",
+              "RelativeToolTip": "Data\\schema.sql",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
+              "WhenOpened": "2026-08-18T12:41:05.918Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 3,
+              "Title": "MenuController.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\MenuController.cs",
+              "RelativeDocumentMoniker": "Controllers\\MenuController.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\MenuController.cs",
+              "RelativeToolTip": "Controllers\\MenuController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAB4AAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T12:38:49.563Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 1,
+              "Title": "MenuRepository.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\repos\\MenuRepository.cs",
+              "RelativeDocumentMoniker": "repos\\MenuRepository.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\repos\\MenuRepository.cs",
+              "RelativeToolTip": "repos\\MenuRepository.cs",
+              "ViewState": "AgIAADEAAAAAAAAAAAAqwEUAAAAFAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T12:38:24.303Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 2,
+              "Title": "IMenuRepository.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\repos\\IMenuRepository.cs",
+              "RelativeDocumentMoniker": "repos\\IMenuRepository.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\repos\\IMenuRepository.cs",
+              "RelativeToolTip": "repos\\IMenuRepository.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAAcAAAAZAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T12:37:34.466Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
+              "Title": "menuDTO.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\DTOS\\menuDTO.cs",
+              "RelativeDocumentMoniker": "DTOS\\menuDTO.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\DTOS\\menuDTO.cs",
+              "RelativeToolTip": "DTOS\\menuDTO.cs",
+              "ViewState": "AgIAAAUAAAAAAAAAAAAiwBcAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T11:49:51.883Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 6,
+              "Title": "AuthRepository.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\repos\\AuthRepository.cs",
+              "RelativeDocumentMoniker": "repos\\AuthRepository.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\repos\\AuthRepository.cs",
+              "RelativeToolTip": "repos\\AuthRepository.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAGQAAAAAAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T11:45:36.803Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 7,
+              "Title": "SessionController.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\SessionController.cs",
+              "RelativeDocumentMoniker": "Controllers\\SessionController.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\SessionController.cs",
+              "RelativeToolTip": "Controllers\\SessionController.cs",
+              "ViewState": "AgIAAAUAAAAAAAAAAAAswCQAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T11:45:13.529Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 8,
+              "Title": "HallController.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\HallController.cs",
+              "RelativeDocumentMoniker": "Controllers\\HallController.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\HallController.cs",
+              "RelativeToolTip": "Controllers\\HallController.cs",
+              "ViewState": "AgIAAA4AAAAAAAAAAAAowCwAAAABAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T11:44:54.547Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 9,
+              "Title": "AuthController.cs",
+              "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\AuthController.cs",
+              "RelativeDocumentMoniker": "Controllers\\AuthController.cs",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Controllers\\AuthController.cs",
+              "RelativeToolTip": "Controllers\\AuthController.cs",
+              "ViewState": "AgIAAAAAAAAAAAAAAAAAAEMAAABSAAAAAAAAAA==",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
+              "WhenOpened": "2026-08-18T11:43:32.843Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 4,
               "Title": "Program.cs",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Program.cs",
               "RelativeDocumentMoniker": "Program.cs",
               "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Program.cs",
               "RelativeToolTip": "Program.cs",
-              "ViewState": "AgIAAAAAAAAAAAAAAAAAABIAAAAaAAAAAAAAAA==",
+              "ViewState": "AgIAABIAAAAAAAAAAAAqwCIAAAAOAAAAAAAAAA==",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2026-08-04T12:44:24.448Z",
               "EditorCaption": ""

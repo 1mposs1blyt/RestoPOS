@@ -30,5 +30,8 @@
     "@biomejs/biome": "^2.5.6",
     "typescript": "^5.7.3",
     "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "pnpm": "^11.22.0"
   }
 }
