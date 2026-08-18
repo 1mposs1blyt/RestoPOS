@@ -951,3 +951,7 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Возвращаем триггеры в обычный режим
 SET session_replication_role = 'origin';
+
+
+
+

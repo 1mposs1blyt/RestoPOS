@@ -18,6 +18,8 @@ builder.Services.AddScoped<server.repos.IHallRepository, server.Repositories.Hal
 // Регистрируем сервисы бэкенда для Dependency Injection
 builder.Services.AddScoped<server.Services.IRoutesService, server.Services.RoutesService>();
 
+builder.Services.AddScoped<server.Repositories.IMenuRepository, server.Repositories.MenuRepository>();
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
