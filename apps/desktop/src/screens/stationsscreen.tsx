@@ -146,10 +146,54 @@ export function StationsScreen() {
  */
 function FiscalDeviceCard() {
   const [isTesting, setIsTesting] = useState(false);
+  const [imagePath, setImagePath] = useState("");
+  const [scalePercent, setScalePercent] = useState(100);
   const [statusMessage, setStatusMessage] = useState<{
     text: string;
     isError: boolean;
   } | null>(null);
+
+  /**
+   * Путь вводится руками, а не выбирается диалогом: файл читает драйвер ККТ
+   * на машине терминала, и до появления `tauri-plugin-dialog` браузерный
+   * `<input type="file">` дал бы объект без пути, который драйверу не отдать.
+   */
+  const handlePrintImage = async () => {
+    if (!isTauri()) {
+      setStatusMessage({
+        text: "Печать доступна только в приложении кассы (Tauri).",
+        isError: true,
+      });
+      return;
+    }
+
+    const path = imagePath.trim();
+    if (!path) {
+      setStatusMessage({
+        text: "Укажите путь к файлу картинки на этом терминале.",
+        isError: true,
+      });
+      return;
+    }
+
+    setIsTesting(true);
+    setStatusMessage(null);
+
+    try {
+      await invoke("fiscal_print_image", { path, scalePercent });
+      setStatusMessage({
+        text: "Картинка отправлена на печать.",
+        isError: false,
+      });
+    } catch (error) {
+      setStatusMessage({
+        text: `Ошибка ККТ: ${typeof error === "string" ? error : JSON.stringify(error)}`,
+        isError: true,
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
 
   const handleFiscalTest = async () => {
     if (!isTauri()) {
@@ -197,6 +241,36 @@ function FiscalDeviceCard() {
           className="min-h-11 rounded-lg border border-orange-500/40 bg-orange-500/20 px-4 text-sm font-bold text-orange-300 transition hover:bg-orange-500/30 active:scale-95 disabled:opacity-50"
         >
           {isTesting ? "Печать..." : "Тест печати ККТ"}
+        </button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 border-t border-slate-800 pt-3">
+        <input
+          value={imagePath}
+          onChange={(event) => setImagePath(event.target.value)}
+          placeholder="C:\RestoPOS\logo.png"
+          aria-label="Путь к картинке на терминале"
+          className="min-h-11 flex-1 rounded-lg bg-slate-950 px-3 text-sm font-semibold text-slate-200 outline-none placeholder:text-slate-600 focus:ring-2 focus:ring-orange-400"
+        />
+        <input
+          type="number"
+          min={1}
+          max={100}
+          value={scalePercent}
+          onChange={(event) =>
+            setScalePercent(Number(event.target.value) || 100)
+          }
+          aria-label="Масштаб картинки, проценты"
+          className="min-h-11 w-20 rounded-lg bg-slate-950 px-3 text-sm font-semibold text-slate-200 outline-none focus:ring-2 focus:ring-orange-400"
+        />
+        <span className="text-xs text-slate-500">%</span>
+        <button
+          type="button"
+          disabled={isTesting}
+          onClick={handlePrintImage}
+          className="min-h-11 rounded-lg border border-orange-500/40 bg-orange-500/20 px-4 text-sm font-bold text-orange-300 transition hover:bg-orange-500/30 active:scale-95 disabled:opacity-50"
+        >
+          {isTesting ? "Печать..." : "Печать картинки"}
         </button>
       </div>
 

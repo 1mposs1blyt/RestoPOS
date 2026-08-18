@@ -151,6 +151,9 @@ impl FiscalDevice for AtolDevice {
             r#"
                 $fptr.beginNonFiscalDocument()
 
+                # Отключаем печать реквизитов внизу (ИНН, дата, шифрование)
+                $fptr.setParam([Atol.Drivers10.Fptr.Constants]::LIBFPTR_PARAM_PRINT_FOOTER, [bool]$false)
+
                 $fptr.setParam([Atol.Drivers10.Fptr.Constants]::LIBFPTR_PARAM_FILENAME, '{file}')
                 $fptr.setParam([Atol.Drivers10.Fptr.Constants]::LIBFPTR_PARAM_ALIGNMENT, [Atol.Drivers10.Fptr.Constants]::LIBFPTR_ALIGNMENT_CENTER)
                 $fptr.setParam([Atol.Drivers10.Fptr.Constants]::LIBFPTR_PARAM_SCALE_PERCENT, {scale})
