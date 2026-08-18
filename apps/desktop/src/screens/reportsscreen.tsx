@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { cn } from "@restopos/ui-kit";
 import { useNavigation } from "../app/navigation";
+import { useMenu } from "../state/menu";
 import { useOrders } from "../state/orders";
 import { useShifts } from "../state/shifts";
 import { REPORTS, reportGroups, type ReportContext } from "../lib/reports";
@@ -20,6 +21,7 @@ export function ReportsScreen() {
   const { back } = useNavigation();
   const { state: orders } = useOrders();
   const { cashShift, state: shifts } = useShifts();
+  const { findMenuItem } = useMenu();
   const [selected, setSelected] = useState<string | null>(null);
 
   const context = useMemo<ReportContext>(
@@ -30,8 +32,9 @@ export function ReportsScreen() {
       discounts: Object.values(orders.discounts),
       operations: Object.values(shifts.cashOperations),
       cashShift,
+      findMenuItem,
     }),
-    [orders, shifts.cashOperations, cashShift],
+    [orders, shifts.cashOperations, cashShift, findMenuItem],
   );
 
   const report = REPORTS.find((entry) => entry.code === selected);

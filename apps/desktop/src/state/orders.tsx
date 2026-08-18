@@ -23,7 +23,7 @@ import { computeTotals, type OrderTotals } from "../lib/discount";
 import { refundablePayments } from "../lib/refund";
 import { findDiscountType } from "../data/discount-types";
 import { findPaymentType } from "../data/payment-types";
-import { findMenuItem } from "./menu";
+import { useMenu } from "./menu";
 import { useShifts } from "./shifts";
 import {
   ACTIVE_STATUSES,
@@ -203,6 +203,18 @@ export function OrdersProvider({
   const { cashShift } = useShifts();
   const [state, dispatch] = useReducer(reducer, undefined, loadOrders);
   const { stations, hasScreenOf } = useStations();
+  const { findMenuItem } = useMenu();
+
+  /**
+   * Станция позиции для редьюсера.
+   *
+   * Отдельная ссылка, а не `findMenuItem` внутри редьюсера: тот обязан
+   * оставаться чистым, а меню приезжает с узла и меняется под ногами.
+   */
+  const stationOf = useCallback(
+    (menuItemId: UUID) => findMenuItem(menuItemId)?.prepStationId ?? null,
+    [findMenuItem],
+  );
 
   useEffect(() => {
     saveState(STORAGE_KEY, state);
@@ -241,7 +253,7 @@ export function OrdersProvider({
               : "0.00";
           }),
       ),
-    [itemsOfOrder],
+    [itemsOfOrder, findMenuItem],
   );
 
   const discountsOfOrder = useCallback(
@@ -301,7 +313,7 @@ export function OrdersProvider({
 
     for (const item of Object.values(state.items)) {
       if (item.status !== "cooking" && item.status !== "ready") continue;
-      const stationId = findMenuItem(item.menuItemId)?.prepStationId ?? null;
+      const stationId = stationOf(item.menuItemId);
       const key = `${item.orderId}:${stationId ?? "-"}`;
       const bucket = pending.get(key);
       if (bucket) bucket.items.push(item);
@@ -320,7 +332,7 @@ export function OrdersProvider({
           new Date(a.order.createdAt).getTime() -
           new Date(b.order.createdAt).getTime(),
       );
-  }, [state.items, state.orders]);
+  }, [state.items, state.orders, stationOf]);
 
   /**
    * Открыть заказ на столе (или на прилавке, если `tableId` — `null`).
@@ -439,7 +451,7 @@ export function OrdersProvider({
       setItemStatus: (itemId, status) =>
         dispatch({ type: "item/status", itemId, status }),
       sendToKitchen: (orderId) =>
-        dispatch({ type: "order/send", orderId, autoReadyStationIds }),
+        dispatch({ type: "order/send", orderId, stationOf, autoReadyStationIds }),
       payOrder: (orderId, drafts) => {
         // Без открытой кассовой смены чек не к чему привязать: у него не будет
         // ни номера смены, ни места в Z-отчёте. Экран оплаты до этого места
@@ -503,6 +515,7 @@ export function OrdersProvider({
       discountsOfOrder,
       openOrder,
       addItem,
+      stationOf,
       autoReadyStationIds,
       cashShift,
       waiterId,

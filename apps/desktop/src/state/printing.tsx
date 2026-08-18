@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { Order, OrderItem, PrintJob, UUID } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
-import { findMenuItem } from "./menu";
+import { useMenu } from "./menu";
 import { useOrders } from "./orders";
 import { useStations } from "./stations";
 import { useTables } from "./tables";
@@ -95,6 +95,7 @@ export function PrintingProvider({ children }: { children: ReactNode }) {
   const { state: ordersState, itemsOfOrder, sendToKitchen } = useOrders();
   const { outputs, findStation } = useStations();
   const { findTable } = useTables();
+  const { findMenuItem } = useMenu();
   const [jobs, setJobs] = useState<PrintJob[]>(() =>
     restoreJobs(loadState<PrintJob[]>(STORAGE_KEY, [])),
   );
@@ -157,7 +158,7 @@ export function PrintingProvider({ children }: { children: ReactNode }) {
 
       enqueue(created);
     },
-    [itemsOfOrder, sendToKitchen, outputs, enqueue],
+    [itemsOfOrder, sendToKitchen, outputs, enqueue, findMenuItem],
   );
 
   const retry = useCallback(
@@ -251,7 +252,7 @@ export function PrintingProvider({ children }: { children: ReactNode }) {
 
       return lines;
     },
-    [findStation, findTable, ordersState.items],
+    [findStation, findTable, ordersState.items, findMenuItem],
   );
 
   /*

@@ -2,7 +2,6 @@ import type {
   FeatureCode,
   MenuCategory,
   MenuItem,
-  Modifier,
   Order,
   OrderItem,
   OrderItemStatus,
@@ -68,10 +67,22 @@ export interface OverrideGrant {
 
 // ── Справочники ─────────────────────────────────────────────────────────────
 
+/**
+ * Меню так, как его отдаёт узел (`MenuSnapshotDto`).
+ *
+ * Модификаторов здесь нет, хотя контракт из `docs/plan.md` §4.2 их обещает:
+ * `MenuRepository` читает только категории и позиции, таблицы модификаторов
+ * запрос не трогает вовсе. Поле, которое всегда приезжает `undefined`, хуже
+ * отсутствующего — по нему пишут экран, а он молча ничего не показывает.
+ * Появятся модификаторы на узле — вернётся и поле.
+ *
+ * `isStopListed` узел считает сам, из `stop_list` с остатком ≤ 0. Локальный
+ * стоп-лист (`state/stoplist.tsx`) при этом остаётся: он умеет положительный
+ * остаток («осталось три порции»), которого этим флагом не выразить.
+ */
 export interface MenuSnapshot {
   categories: MenuCategory[];
   items: MenuItem[];
-  modifiers: Modifier[];
 }
 
 export interface StationsSnapshot {
@@ -214,8 +225,19 @@ export class NodeApi {
 
   // ── Справочники ───────────────────────────────────────────────────────────
 
-  menu(): Promise<MenuSnapshot> {
-    return this.http.get<MenuSnapshot>("/menu");
+  /**
+   * Меню заведения.
+   *
+   * Третье расхождение с `docs/plan.md`, и оно того же рода, что у столов:
+   * план описывал `GET /menu` без параметров, а `MenuController` размечен
+   * `api/v1/venues/{venueId:guid}/menu`. Заведение уезжает путём, а не
+   * заголовком, потому что так его разметил узел.
+   *
+   * Несуществующее заведение — это `404`, а не пустое меню: касса, показавшая
+   * пустой экран вместо отказа, выглядит как касса с распроданным меню.
+   */
+  menu(venueId: UUID): Promise<MenuSnapshot> {
+    return this.http.get<MenuSnapshot>(`/api/v1/venues/${venueId}/menu`);
   }
 
   stations(): Promise<StationsSnapshot> {

@@ -1,7 +1,6 @@
 // src/lib.rs
-pub mod fiscal;
 mod acquiring;
-// mod fiscal;
+mod fiscal;
 mod printing;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -31,6 +30,8 @@ pub fn run() {
         fiscal::commands::fiscal_close_shift,
         fiscal::commands::fiscal_x_report,
         fiscal::commands::fiscal_register,
+        fiscal::commands::fiscal_print_test,
+        fiscal::commands::fiscal_print_image,
         acquiring::commands::acquiring_status,
         acquiring::commands::acquiring_pay,
         acquiring::commands::acquiring_reversal,
@@ -48,6 +49,8 @@ pub fn run() {
         fiscal::commands::fiscal_close_shift,
         fiscal::commands::fiscal_x_report,
         fiscal::commands::fiscal_register,
+        fiscal::commands::fiscal_print_test,
+        fiscal::commands::fiscal_print_image,
         acquiring::commands::acquiring_status,
         acquiring::commands::acquiring_pay,
         acquiring::commands::acquiring_reversal,

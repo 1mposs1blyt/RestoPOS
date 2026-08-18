@@ -7,7 +7,7 @@ import { findStaff } from "../data/session-source";
 import { formatMoney } from "../lib/money";
 import { refundableTotal, refundedTotal } from "../lib/refund";
 import { useCheckout } from "../state/checkout";
-import { findMenuItem } from "../state/menu";
+import { useMenu } from "../state/menu";
 import { useOrders } from "../state/orders";
 import { useShifts } from "../state/shifts";
 import { CheckoutOverlay } from "./checkoutoverlay";
@@ -34,6 +34,7 @@ export function RefundScreen() {
   const { cashShift } = useShifts();
   const { state, itemsOfOrder, paymentsOfOrder, orderTotal } = useOrders();
   const { refund, status, isBusy, reset } = useCheckout();
+  const { findMenuItem } = useMenu();
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);

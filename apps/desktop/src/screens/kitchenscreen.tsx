@@ -5,7 +5,7 @@ import { useSession } from "../app/session";
 import { useOrders } from "../state/orders";
 import { useStations } from "../state/stations";
 import { useTables } from "../state/tables";
-import { findMenuItem } from "../state/menu";
+import { useMenu } from "../state/menu";
 import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
 
 /** Через сколько минут тикет считается просроченным. */
@@ -152,6 +152,7 @@ function Ticket({
   canChange: boolean;
   onItemStatus: (itemId: UUID, status: OrderItem["status"]) => void;
 }) {
+  const { findMenuItem } = useMenu();
   const isLate = minutesSince(order.createdAt, now) >= LATE_AFTER_MINUTES;
   const allReady = items.every((item) => item.status === "ready");
 

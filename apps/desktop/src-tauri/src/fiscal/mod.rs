@@ -23,7 +23,7 @@
 //! исход: связь с ККТ рвётся ровно в тот миг, когда чек уже зарегистрирован,
 //! а ответ не доехал. Считать такое ошибкой — пробить второй чек на те же
 //! деньги; считать успехом — потерять фискальный документ. Поэтому
-//! `register_receipt` при неизвестном исходе идёт спрашивать сам ФР, что
+//! `register_with_recovery` при неизвестном исходе идёт спрашивать сам ФР, что
 //! он записал последним (см. `recover_unknown`).
 
 // src/fiscal/mod.rs
@@ -31,9 +31,10 @@ pub mod atol;
 pub mod commands;
 pub mod emulator;
 
-pub use commands::*;
-
 use serde::{Deserialize, Serialize};
+
+#[cfg(any(test, debug_assertions))]
+use self::emulator::Emulator;
 
 /// Деньги — целые копейки, как и во фронте (`lib/money.ts`).
 ///
@@ -241,6 +242,11 @@ pub trait FiscalDevice: Send {
     fn x_report(&mut self) -> Result<ZReport, FiscalError>;
     fn register(&mut self, request: &ReceiptRequest) -> Result<FiscalReceipt, FiscalError>;
     fn last_receipt(&mut self) -> Result<Option<FiscalReceipt>, FiscalError>;
+    /// Доступ к эмулятору для сценариев отказов.
+    ///
+    /// Под `cfg`, как и `fiscal_simulate`: возможности сказать кассе «потеряй
+    /// следующий ответ» в проде не должно существовать физически.
+    #[cfg(debug_assertions)]
     fn as_emulator(&mut self) -> Option<&mut Emulator> {
         None
     }
@@ -290,14 +296,6 @@ pub enum RegistrationOutcome {
 /// Сравнение идёт по `client_id`, а не по сумме: два одинаковых заказа
 /// на 420 рублей подряд — обычное дело в фастфуде, и по сумме свой чек
 /// от чужого не отличить.
-use crate::fiscal::emulator::Emulator;
-
-// Если LastReceiptStatus еще не объявлен в проекте, добавьте его структуру:
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct LastReceiptStatus {
-    pub is_printed: bool,
-    pub fiscal_number: Option<String>,
-}
 pub fn register_with_recovery(
     device: &mut dyn FiscalDevice,
     request: &ReceiptRequest,
@@ -495,14 +493,14 @@ mod tests {
         let mut device = Emulator::new();
         device.open_shift("Мария").expect("смена");
 
-        device.register_receipt(&чек("c-1")).expect("наличный чек");
+        device.register(&чек("c-1")).expect("наличный чек");
 
         let mut картой = чек("c-2");
         картой.payments = vec![ReceiptPayment {
             kind: PaymentKind::Cashless,
             amount: 42000,
         }];
-        device.register_receipt(&картой).expect("чек картой");
+        device.register(&картой).expect("чек картой");
 
         let z = device.close_shift("Мария").expect("Z-отчёт");
         assert_eq!(z.receipts, 2);
@@ -515,11 +513,11 @@ mod tests {
     fn возврат_не_вычитается_из_выручки_а_идёт_своей_строкой() {
         let mut device = Emulator::new();
         device.open_shift("Мария").expect("смена");
-        device.register_receipt(&чек("c-1")).expect("продажа");
+        device.register(&чек("c-1")).expect("продажа");
 
         let mut возврат = чек("c-2");
         возврат.kind = ReceiptKind::Refund;
-        device.register_receipt(&возврат).expect("возврат");
+        device.register(&возврат).expect("возврат");
 
         let z = device.close_shift("Мария").expect("Z-отчёт");
         // Возврат — отдельный род документа: свернув его с приходом, мы
@@ -551,13 +549,13 @@ mod tests {
     fn номера_чеков_идут_подряд_а_документов_сквозь_смены() {
         let mut device = Emulator::new();
         device.open_shift("Мария").expect("смена 1");
-        let first = device.register_receipt(&чек("c-1")).expect("чек 1");
-        let second = device.register_receipt(&чек("c-2")).expect("чек 2");
+        let first = device.register(&чек("c-1")).expect("чек 1");
+        let second = device.register(&чек("c-2")).expect("чек 2");
         assert_eq!((first.receipt_number, second.receipt_number), (1, 2));
 
         device.close_shift("Мария").expect("Z");
         device.open_shift("Мария").expect("смена 2");
-        let third = device.register_receipt(&чек("c-3")).expect("чек 3");
+        let third = device.register(&чек("c-3")).expect("чек 3");
 
         // Номер чека — внутри смены, поэтому обнулился.
         assert_eq!(third.receipt_number, 1);

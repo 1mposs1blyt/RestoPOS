@@ -6,7 +6,7 @@ import { useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
 import { DISCOUNT_TYPES } from "../data/discount-types";
 import { PAYMENT_TYPES, findPaymentType } from "../data/payment-types";
-import { findMenuItem } from "../state/menu";
+import { useMenu } from "../state/menu";
 import { useCheckout } from "../state/checkout";
 import { useOrders, type PaymentDraft } from "../state/orders";
 import { CheckoutOverlay } from "./checkoutoverlay";
@@ -60,6 +60,7 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
   const { can, isPossible, authorize } = useAccess();
   const { tables } = useTables();
   const { pay, isBusy, isNonFiscal } = useCheckout();
+  const { findMenuItem } = useMenu();
 
   const order = state.orders[orderId];
   const items = itemsOfOrder(orderId).filter((item) => item.status !== "voided");

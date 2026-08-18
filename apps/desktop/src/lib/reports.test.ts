@@ -3,6 +3,7 @@ import type {
   CashShift,
   Order,
   OrderDiscount,
+  MenuItem,
   OrderItem,
   Payment,
   PaymentKind,
@@ -14,7 +15,9 @@ import { REPORTS, reportGroups, type ReportContext } from "./reports";
  * смена. Расхождение здесь заметят не сразу и будут искать долго, поэтому
  * каждый отчёт проверяем на данных, где ответ известен заранее.
  *
- * Блюда берутся из демо-меню (`state/menu.ts`): «Борщ с говядиной» — 420 ₽.
+ * Меню теперь входит в контекст отчёта, а не берётся глобально: раньше тест
+ * молча опирался на демо-каталог, и цена «Борща» жила в другом файле. Здесь
+ * оно задано явно — «Борщ с говядиной» за 420 ₽, как в демо-каталоге.
  */
 const SHIFT: CashShift = {
   id: "c1",
@@ -72,6 +75,17 @@ function payment(
   };
 }
 
+const MENU: Record<string, MenuItem> = {
+  "item-borsch": {
+    id: "item-borsch",
+    categoryId: "cat-soup",
+    name: "Борщ с говядиной",
+    price: "420.00",
+    isStopListed: false,
+    prepStationId: "station-kitchen",
+  },
+};
+
 function context(patch: Partial<ReportContext> = {}): ReportContext {
   return {
     orders: [],
@@ -80,6 +94,7 @@ function context(patch: Partial<ReportContext> = {}): ReportContext {
     discounts: [],
     operations: [],
     cashShift: SHIFT,
+    findMenuItem: (id) => MENU[id],
     ...patch,
   };
 }

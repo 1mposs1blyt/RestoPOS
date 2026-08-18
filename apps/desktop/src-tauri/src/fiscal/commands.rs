@@ -5,23 +5,39 @@
 //! под мьютексом, а не создаётся на каждый вызов. Две параллельные
 //! регистрации в одну ККТ — это два чека вперемешку.
 //!
-//! Сегодня за трейтом стоит эмулятор. Драйвер АТОЛ (ДТО-10) подключается
-//! **заменой одной строки** в `init_state`: весь порядок операций и
-//! восстановление после обрыва живут в `fiscal::register_with_recovery`
-//! и от модели ККТ не зависят.
+//! Реализация подменяется **в одном месте** — в `FiscalState::new`. Своя
+//! `tauri::Builder` в `main.rs` это правило уже нарушала: живая ККТ была
+//! заведена там, эмулятор — здесь, и какая из двух работает, зависело
+//! от того, какой вход выполняется. Порядок операций и восстановление
+//! после обрыва от модели ККТ не зависят и живут
+//! в `fiscal::register_with_recovery`.
 
 use std::sync::Mutex;
 
+use super::atol::AtolDevice;
 use super::emulator::Emulator;
 use super::{DeviceStatus, FiscalDevice, ReceiptRequest, RegistrationOutcome, ZReport};
 
-// pub struct FiscalState(Mutex<Box<dyn FiscalDevice>>);
+/// Живая ККТ подключена по TCP/IP, а не по COM: монопольного захвата порта
+/// у неё нет, и утилита АТОЛ открывает кассу параллельно с ней.
+const KKT_ADDRESS: (&str, u16) = ("192.168.3.223", 5555);
+
 pub struct FiscalState(pub Mutex<Box<dyn FiscalDevice>>);
+
 impl FiscalState {
-    /// Здесь и подменяется реализация: `Box::new(Atol::new(...))` вместо
-    /// эмулятора, когда драйвер появится.
+    /// Здесь и подменяется реализация.
+    ///
+    /// По умолчанию — драйвер АТОЛ: терминал стоит рядом с железом, и
+    /// «касса молча пробила чек в эмулятор» — худший из возможных исходов.
+    /// Без ККТ под рукой (машина разработчика, браузерная отладка) эмулятор
+    /// включается переменной окружения `RESTOPOS_KKT=emulator`.
     pub fn new() -> Self {
-        Self(Mutex::new(Box::new(Emulator::new())))
+        let device: Box<dyn FiscalDevice> = match std::env::var("RESTOPOS_KKT").as_deref() {
+            Ok("emulator") => Box::new(Emulator::new()),
+            _ => Box::new(AtolDevice::new(KKT_ADDRESS.0, KKT_ADDRESS.1)),
+        };
+
+        Self(Mutex::new(device))
     }
 }
 
@@ -122,9 +138,11 @@ pub fn fiscal_simulate(
 
     Ok(())
 }
+
+/// Тестовая печать: проверка связи с ККТ, доступная до всякой фискализации.
 #[tauri::command]
 pub fn fiscal_print_test(state: tauri::State<'_, FiscalState>) -> Result<(), String> {
-    let mut device = state.0.lock().map_err(|e| e.to_string())?;
+    let mut device = lock(&state)?;
     device.print_test_receipt()
 }
 

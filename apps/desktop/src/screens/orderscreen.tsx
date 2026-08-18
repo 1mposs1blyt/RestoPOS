@@ -8,7 +8,8 @@ import { useOrders } from "../state/orders";
 import { usePrinting } from "../state/printing";
 import { useStopList } from "../state/stoplist";
 import { useTables } from "../state/tables";
-import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
+import { useMenu } from "../state/menu";
+import { MenuNotice } from "./menunotice";
 import { formatMoney, multiplyMoney } from "../lib/money";
 import { SplitDialog } from "../components/splitdialog";
 
@@ -48,6 +49,11 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
   // на бумаге не то, что у него на экране.
   const { fireOrder } = usePrinting();
   const { isStopped, entryOf } = useStopList();
+  const {
+    categories,
+    itemsOfCategory,
+    status: menuStatus,
+  } = useMenu();
 
   const table = findTable(tableId);
   const order = orderOfTable(tableId);
@@ -56,9 +62,21 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
     if (!order) openOrder(tableId);
   }, [order, tableId, openOrder]);
 
-  const [activeCategoryId, setActiveCategoryId] = useState(
-    () => MENU_CATEGORIES[0].id,
-  );
+  /*
+   * Категория выбирается лениво: меню приезжает с узла, и на первом рендере
+   * его ещё нет. `null` — «ни одна не выбрана», а не «первая»; какая первая,
+   * станет известно, когда меню доедет.
+   */
+  const [pickedCategoryId, setPickedCategoryId] = useState<UUID | null>(null);
+  /*
+   * Выбранная категория может исчезнуть: меню перечитывают по кнопке, и там
+   * его правит менеджер. Ссылка на пропавшую категорию — это пустая сетка
+   * блюд с подсветкой на кнопке, которой в списке уже нет.
+   */
+  const activeCategoryId =
+    categories.find((category) => category.id === pickedCategoryId)?.id ??
+    categories[0]?.id ??
+    null;
   /** Доступ к чужому заказу, подтверждённый на этот заход. */
   const [isForeignApproved, setForeignApproved] = useState(false);
   /** Позиция, которую делят прямо сейчас. */
@@ -72,8 +90,8 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
   }, [tableId]);
 
   const categoryItems = useMemo(
-    () => menuItemsOfCategory(activeCategoryId),
-    [activeCategoryId],
+    () => (activeCategoryId ? itemsOfCategory(activeCategoryId) : []),
+    [activeCategoryId, itemsOfCategory],
   );
 
   // Один кадр между монтированием и созданием заказа в эффекте.
@@ -226,11 +244,11 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
             а горизонтальный скроллбар на сенсорном экране — мишень в пару
             пикселей, и часть категорий просто не видна. */}
         <div className="flex shrink-0 flex-wrap gap-2">
-          {MENU_CATEGORIES.map((category) => (
+          {categories.map((category) => (
             <button
               key={category.id}
               type="button"
-              onClick={() => setActiveCategoryId(category.id)}
+              onClick={() => setPickedCategoryId(category.id)}
               className={cn(
                 "min-h-14 whitespace-nowrap rounded-xl border px-4 text-sm font-bold uppercase tracking-wider transition active:scale-95",
                 activeCategoryId === category.id
@@ -242,6 +260,8 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
             </button>
           ))}
         </div>
+
+        {menuStatus === "ready" ? null : <MenuNotice />}
 
         {/* Колонки считаем от ширины самой сетки, а не от вьюпорта: ширина
             здесь зависит ещё и от панели чека, и брейкпоинты по экрану давали
@@ -401,6 +421,7 @@ function CheckLine({
   onServe: (itemId: UUID) => void;
   onSplit: (itemId: UUID) => void;
 }) {
+  const { findMenuItem } = useMenu();
   const menuItem = findMenuItem(item.menuItemId);
   const isEditable = item.status === "new" && canEdit;
   const isVoided = item.status === "voided";

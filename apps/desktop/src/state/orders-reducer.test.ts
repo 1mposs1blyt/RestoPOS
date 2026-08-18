@@ -13,8 +13,10 @@ import {
  * или дорого стоит: задвоение позиции от двойного касания, потерянная позиция
  * при сторно, вечно висящий тикет станции без экрана.
  *
- * Станции берутся из демо-меню (`state/menu.ts`): «Борщ» готовится на кухне,
- * «Морс клюквенный» — на баре.
+ * Станцию позиции редьюсер спрашивает у `stationOf` из самого действия,
+ * а не у меню: меню приезжает с узла, а редьюсер обязан оставаться чистым.
+ * Раскладка ниже повторяет демо-каталог — «Борщ» на кухне, «Морс» на баре, —
+ * но теперь это видно прямо в тесте, а не подразумевается.
  */
 
 const SHIFT: UUID = "shift-1";
@@ -183,6 +185,8 @@ describe("отправка на кухню", () => {
     const next = reducer(state, {
       type: "order/send",
       orderId: "order-1",
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
       autoReadyStationIds: [],
     });
     expect(next.items["item-1"].status).toBe("cooking");
@@ -195,6 +199,8 @@ describe("отправка на кухню", () => {
     const next = reducer(state, {
       type: "order/send",
       orderId: "order-1",
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
       autoReadyStationIds: [BAR],
     });
     expect(next.items["item-1"].status).toBe("cooking");
@@ -206,6 +212,8 @@ describe("отправка на кухню", () => {
     const sent = reducer(state, {
       type: "order/send",
       orderId: "order-1",
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
       autoReadyStationIds: [],
     });
     const ready = reducer(sent, {
@@ -216,6 +224,8 @@ describe("отправка на кухню", () => {
     const again = reducer(ready, {
       type: "order/send",
       orderId: "order-1",
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
       autoReadyStationIds: [],
     });
     expect(again).toBe(ready);
@@ -227,6 +237,8 @@ describe("отправка на кухню", () => {
       reducer(empty, {
         type: "order/send",
         orderId: "order-1",
+        stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
         autoReadyStationIds: [KITCHEN],
       }),
     ).toBe(empty);

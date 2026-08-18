@@ -13,7 +13,8 @@ import { useNavigation } from "../app/navigation";
 import { useOrders } from "../state/orders";
 import { usePrinting } from "../state/printing";
 import { useStopList } from "../state/stoplist";
-import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
+import { useMenu } from "../state/menu";
+import { MenuNotice } from "./menunotice";
 import { formatMoney, multiplyMoney } from "../lib/money";
 import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
 
@@ -43,10 +44,19 @@ export function CounterScreen() {
   // Живой стоп-лист терминала, а не снимок `isStopListed` из меню: его правит
   // повар в течение смены, и на прилавке это заметно сразу.
   const { isStopped } = useStopList();
+  const { categories, itemsOfCategory, status: menuStatus } = useMenu();
 
-  const [activeCategoryId, setActiveCategoryId] = useState(
-    () => MENU_CATEGORIES[0].id,
-  );
+  /*
+   * Категория выбирается лениво: меню приезжает с узла, и на первом рендере
+   * его ещё нет. `null` — «ни одна не выбрана», а не «первая»; какая из них
+   * первая, станет известно ниже, когда меню доедет.
+   */
+  const [pickedCategoryId, setPickedCategoryId] = useState<UUID | null>(null);
+  // Пропавшая из меню категория не должна оставаться выбранной — см. `orderscreen`.
+  const activeCategoryId =
+    categories.find((category) => category.id === pickedCategoryId)?.id ??
+    categories[0]?.id ??
+    null;
   /** Только что рассчитанный заказ: номер называют гостю, способ — для сверки. */
   const [served, setServed] = useState<{
     number: number;
@@ -73,8 +83,8 @@ export function CounterScreen() {
   }, [counterOrder, orders, paymentsOfOrder]);
 
   const categoryItems = useMemo(
-    () => menuItemsOfCategory(activeCategoryId),
-    [activeCategoryId],
+    () => (activeCategoryId ? itemsOfCategory(activeCategoryId) : []),
+    [activeCategoryId, itemsOfCategory],
   );
 
   if (!counterOrder) return null;
@@ -126,11 +136,11 @@ export function CounterScreen() {
 
       <div className="flex flex-1 flex-col gap-4 overflow-hidden">
         <div className="flex shrink-0 flex-wrap gap-2">
-          {MENU_CATEGORIES.map((category) => (
+          {categories.map((category) => (
             <button
               key={category.id}
               type="button"
-              onClick={() => setActiveCategoryId(category.id)}
+              onClick={() => setPickedCategoryId(category.id)}
               className={cn(
                 "min-h-14 whitespace-nowrap rounded-xl border px-4 text-sm font-bold uppercase tracking-wider transition active:scale-95",
                 activeCategoryId === category.id
@@ -142,6 +152,8 @@ export function CounterScreen() {
             </button>
           ))}
         </div>
+
+        {menuStatus === "ready" ? null : <MenuNotice />}
 
         <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(190px,1fr))] content-start gap-3 overflow-y-auto pr-1">
           {categoryItems.map((menuItem) => (
@@ -294,6 +306,7 @@ function QueueCard({
   canIssue: boolean;
   onIssued: () => void;
 }) {
+  const { findMenuItem } = useMenu();
   const isLate = minutesSince(createdAt, now) >= LATE_AFTER_MINUTES;
 
   return (
@@ -486,6 +499,7 @@ function CounterLine({
   onQuantity: (itemId: UUID, quantity: number) => void;
   onRemove: (itemId: UUID) => void;
 }) {
+  const { findMenuItem } = useMenu();
   const menuItem = findMenuItem(item.menuItemId);
 
   return (

@@ -6,7 +6,7 @@ import type {
   OrderItem,
   Payment,
 } from "@restopos/shared-types";
-import { findMenuItem } from "../state/menu";
+import type { MenuItemLookup } from "../state/menu";
 import { findStaff } from "../data/session-source";
 import { computeTotals } from "./discount";
 import { fromMinor, multiplyMoney, sumMoney, toMinor, ZERO_MONEY } from "./money";
@@ -30,6 +30,15 @@ export interface ReportContext {
   discounts: OrderDiscount[];
   operations: CashOperation[];
   cashShift: CashShift | undefined;
+  /**
+   * Меню — теперь тоже входные данные, а не глобальная константа.
+   *
+   * До переезда меню на узел отчёты импортировали `findMenuItem` напрямую,
+   * и «чистая функция от снимка смены» тихо зависела от демо-каталога:
+   * подставить в тест своё блюдо было нельзя, а с приходом узла отчёт
+   * посчитался бы по чужому меню.
+   */
+  findMenuItem: MenuItemLookup;
 }
 
 /**
@@ -42,7 +51,9 @@ export interface ReportContext {
  * при сверке смены видел две разные выручки.
  */
 function orderNet(context: ReportContext, order: Order): string {
-  const subtotal = sumMoney(itemsOf(context, [order]).map(lineTotal));
+  const subtotal = sumMoney(
+    itemsOf(context, [order]).map((item) => lineTotal(context, item)),
+  );
   const lines = context.discounts
     .filter((discount) => discount.orderId === order.id)
     .map((discount) => ({
@@ -154,8 +165,8 @@ function itemsOf(context: ReportContext, orders: Order[]): OrderItem[] {
   );
 }
 
-function lineTotal(item: OrderItem): string {
-  const menuItem = findMenuItem(item.menuItemId);
+function lineTotal(context: ReportContext, item: OrderItem): string {
+  const menuItem = context.findMenuItem(item.menuItemId);
   return menuItem ? multiplyMoney(menuItem.price, item.quantity) : ZERO_MONEY;
 }
 
@@ -245,14 +256,14 @@ export const REPORTS: ReportDefinition[] = [
       const sold = paidOrders(context).filter((order) => !refunded.has(order.id));
 
       for (const item of itemsOf(context, sold)) {
-        const menuItem = findMenuItem(item.menuItemId);
+        const menuItem = context.findMenuItem(item.menuItemId);
         const bucket = byDish.get(item.menuItemId) ?? {
           name: menuItem?.name ?? "Позиция удалена из меню",
           qty: 0,
           minor: 0,
         };
         bucket.qty += item.quantity;
-        bucket.minor += toMinor(lineTotal(item));
+        bucket.minor += toMinor(lineTotal(context, item));
         byDish.set(item.menuItemId, bucket);
       }
 
@@ -295,9 +306,9 @@ export const REPORTS: ReportDefinition[] = [
         .filter((item) => item.status === "voided")
         .map((item) => ({
           order: `№ ${orderById.get(item.orderId)?.number ?? "—"}`,
-          name: findMenuItem(item.menuItemId)?.name ?? "—",
+          name: context.findMenuItem(item.menuItemId)?.name ?? "—",
           qty: String(item.quantity),
-          amount: lineTotal(item),
+          amount: lineTotal(context, item),
         }));
 
       return {

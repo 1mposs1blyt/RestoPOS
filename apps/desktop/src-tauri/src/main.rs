@@ -1,28 +1,15 @@
-// src/main.rs
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod fiscal;
-use fiscal::commands::{FiscalState, *};
-use std::sync::Mutex;
-
+/*
+ * Точка входа не должна знать ничего, кроме имени функции запуска.
+ *
+ * Своя `tauri::Builder` здесь уже была, и разошлась с той, что в `lib.rs`:
+ * половина команд оказалась зарегистрирована только в одной из них, а
+ * выполнялась вторая. Симптом на фронте — «команда не найдена» на печати
+ * марок и всём эквайринге, при полностью рабочей отладочной сборке.
+ * Регистрация команд живёт в одном месте (`lib.rs`), и делить её нельзя.
+ */
 fn main() {
-    // let fiscal_state = FiscalState(Mutex::new(Box::new(fiscal::emulator::Emulator::new())));
-    // let atol_device = fiscal::atol::AtolDevice::new("COM3", 115200);
-    let atol_device = crate::fiscal::atol::AtolDevice::new("192.168.3.223", 5555);
-    let fiscal_state = FiscalState(Mutex::new(Box::new(atol_device)));
-
-    tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
-        .manage(fiscal_state)
-        .invoke_handler(tauri::generate_handler![
-            fiscal_status,
-            fiscal_open_shift,
-            fiscal_close_shift,
-            fiscal_x_report,
-            fiscal_register,
-            fiscal_simulate,
-            fiscal_print_test,
-            fiscal_print_image,
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    desktop_lib::run()
 }

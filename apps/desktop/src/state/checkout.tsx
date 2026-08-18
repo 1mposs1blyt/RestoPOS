@@ -28,7 +28,7 @@ import {
   type FiscalReceiptPayment,
   type VatRate,
 } from "../lib/fiscal";
-import { findMenuItem } from "./menu";
+import { useMenu, type MenuItemLookup } from "./menu";
 import { useDevices } from "./devices";
 import { useOrders, type PaymentDraft } from "./orders";
 import { useShifts } from "./shifts";
@@ -116,6 +116,7 @@ const CheckoutContext = createContext<CheckoutValue | null>(null);
 export function CheckoutProvider({ children }: { children: ReactNode }) {
   const { staff } = useSession();
   const { kkm } = useDevices();
+  const { findMenuItem } = useMenu();
   const { cashShift } = useShifts();
   const {
     state,
@@ -275,6 +276,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
               itemsOfOrder(orderId),
               orderTotals(orderId).total,
               kkm?.defaultVat ?? "vat20",
+              findMenuItem,
             ),
             payments: fiscalPayments(settled),
             taxSystem: kkm?.taxSystem ?? "usn_income",
@@ -336,6 +338,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       itemsOfOrder,
       orderTotals,
       payOrder,
+      findMenuItem,
     ],
   );
 
@@ -466,6 +469,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
               itemsOfOrder(orderId),
               orderTotals(orderId).total,
               kkm?.defaultVat ?? "vat20",
+              findMenuItem,
             ),
             payments: refundable.map((payment) => ({
               kind: payment.kind === "cash" ? ("cash" as const) : ("cashless" as const),
@@ -522,6 +526,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       orderTotals,
       paymentsOfOrder,
       refundPayments,
+      findMenuItem,
     ],
   );
 
@@ -568,6 +573,12 @@ function receiptItems(
   items: OrderItem[],
   total: Money,
   vat: VatRate,
+  /**
+   * Меню уезжает параметром, а не берётся из модуля: оно приезжает с узла
+   * и меняется в течение смены, а функция обязана остаться чистой — по ней
+   * собирается фискальный документ.
+   */
+  findMenuItem: MenuItemLookup,
 ): FiscalReceiptItem[] {
   const sources: ReceiptLineSource[] = items
     // Сторнированная позиция в чек не идёт: из суммы она выпала,

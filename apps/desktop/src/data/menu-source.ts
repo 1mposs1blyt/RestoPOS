@@ -1,17 +1,32 @@
 import type { MenuCategory, MenuItem, UUID } from "@restopos/shared-types";
+import type { MenuSnapshot } from "@restopos/api-client";
+import { isNodeConfigured, nodeApi } from "../api";
 
 /**
- * Демо-каталог меню.
+ * Откуда терминал берёт меню.
  *
- * Форма данных намеренно совпадает с ответом `GET /venues/:id/menu`:
- * позиции ссылаются на категорию через `categoryId` и не дублируют её имя,
- * цена — строка (`Money`). Когда появится эндпоинт, эти константы заменит
- * запрос, а экраны останутся прежними.
+ * Четвёртое место (после `session-source`, `tables-source` и
+ * `occupancy-source`), знающее про узел. Стор и экраны об этом не знают: им
+ * отдаётся готовая пара «категории + позиции», а откуда она взялась — из БД
+ * узла или из демо-каталога ниже — их не касается.
+ *
+ * Демо-каталог живёт здесь, а не в сторе, по той же причине, по которой
+ * localStorage живёт в `tables-source`: это **источник данных**, один
+ * из двух, и держать его рядом со вторым — единственный способ не отрастить
+ * в сторе ветку «а если узла нет».
  */
 
+/*
+ * Демо-каталог. Форма данных совпадает с ответом узла до поля, поэтому
+ * переключение `VITE_NODE_URL` не требует правок ни в сторе, ни в экранах.
+ *
+ * Идентификаторы здесь говорящие (`item-borsch`), а не UUID: на них ссылаются
+ * заказы в localStorage и тесты сторов, и человекочитаемый `menuItemId`
+ * в дампе состояния экономит час на разборе «почему в чеке не та позиция».
+ */
 const VENUE_ID: UUID = "venue-demo";
 
-export const MENU_CATEGORIES: MenuCategory[] = [
+const DEMO_CATEGORIES: MenuCategory[] = [
   { id: "cat-soup", venueId: VENUE_ID, name: "Супы", sortOrder: 1 },
   { id: "cat-hot", venueId: VENUE_ID, name: "Горячее", sortOrder: 2 },
   { id: "cat-salad", venueId: VENUE_ID, name: "Салаты", sortOrder: 3 },
@@ -19,7 +34,7 @@ export const MENU_CATEGORIES: MenuCategory[] = [
   { id: "cat-dessert", venueId: VENUE_ID, name: "Десерты", sortOrder: 5 },
 ];
 
-export const MENU_ITEMS: MenuItem[] = [
+const DEMO_ITEMS: MenuItem[] = [
   {
     id: "item-borsch",
     categoryId: "cat-soup",
@@ -118,12 +133,16 @@ export const MENU_ITEMS: MenuItem[] = [
   },
 ];
 
-const BY_ID = new Map(MENU_ITEMS.map((item) => [item.id, item]));
+/**
+ * Меню заведения. С узлом — из его БД, без узла — демо-каталог.
+ *
+ * Кэша здесь нет намеренно: меню перечитывает стор при монтировании и
+ * по кнопке, и знать про свежесть данных — его забота, а не источника.
+ */
+export async function fetchMenu(venueId: UUID): Promise<MenuSnapshot> {
+  if (!isNodeConfigured()) {
+    return { categories: DEMO_CATEGORIES, items: DEMO_ITEMS };
+  }
 
-export function findMenuItem(id: UUID): MenuItem | undefined {
-  return BY_ID.get(id);
-}
-
-export function menuItemsOfCategory(categoryId: UUID): MenuItem[] {
-  return MENU_ITEMS.filter((item) => item.categoryId === categoryId);
+  return nodeApi("pos").menu(venueId);
 }
