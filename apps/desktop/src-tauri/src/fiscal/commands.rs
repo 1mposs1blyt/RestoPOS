@@ -13,12 +13,10 @@
 use std::sync::Mutex;
 
 use super::emulator::Emulator;
-use super::{
-    DeviceStatus, FiscalDevice, ReceiptRequest, RegistrationOutcome, ZReport,
-};
+use super::{DeviceStatus, FiscalDevice, ReceiptRequest, RegistrationOutcome, ZReport};
 
-pub struct FiscalState(Mutex<Box<dyn FiscalDevice>>);
-
+// pub struct FiscalState(Mutex<Box<dyn FiscalDevice>>);
+pub struct FiscalState(pub Mutex<Box<dyn FiscalDevice>>);
 impl FiscalState {
     /// Здесь и подменяется реализация: `Box::new(Atol::new(...))` вместо
     /// эмулятора, когда драйвер появится.
@@ -123,4 +121,24 @@ pub fn fiscal_simulate(
     }
 
     Ok(())
+}
+#[tauri::command]
+pub fn fiscal_print_test(state: tauri::State<'_, FiscalState>) -> Result<(), String> {
+    let mut device = state.0.lock().map_err(|e| e.to_string())?;
+    device.print_test_receipt()
+}
+
+/// Печать картинки на ленте ККТ.
+///
+/// `path` — путь к файлу на машине терминала (BMP или PNG): картинку читает
+/// драйвер, и про раздачу фронта он ничего не знает. `scalePercent` — доля
+/// от исходного размера, по умолчанию 100.
+#[tauri::command]
+pub fn fiscal_print_image(
+    state: tauri::State<'_, FiscalState>,
+    path: String,
+    scale_percent: Option<u32>,
+) -> Result<(), String> {
+    let mut device = lock(&state)?;
+    device.print_image(&path, scale_percent.unwrap_or(100))
 }

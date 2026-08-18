@@ -185,5 +185,43 @@
     "staff_shift.changed",
     "delivery.status_changed",
     "audit.recorded"
-  ]
+  ],
+
+  "$comment_billing": "Тарифная лестница. Здесь она канонична ровно в том же смысле, что и матрица прав: словарь кодов и то, что каждый тариф даёт. Значения обязаны совпадать с сидом plans/plan_features в apps/backend/server/Data/schema.sql — на рантайме requireFeature читает подписку организации из БД, и разойтись эти два места не имеют права. Фичи и квоты — РАЗНЫЕ механизмы (инвариант №2): булев модуль проверяется наличием в planFeatures, числовой лимит — счётом текущего использования против planQuotas.",
+
+  "planCodes": ["start", "standard", "pro"],
+
+  "featureCodes": [
+    "warehouse",
+    "kds",
+    "delivery",
+    "reports",
+    "egais",
+    "loyalty",
+    "analytics",
+    "suppliers",
+    "multi_venue"
+  ],
+
+  "planFeatures": {
+    "start": [],
+    "standard": ["warehouse", "kds", "delivery", "reports"],
+    "pro": [
+      "warehouse",
+      "kds",
+      "delivery",
+      "reports",
+      "egais",
+      "loyalty",
+      "analytics",
+      "suppliers",
+      "multi_venue"
+    ]
+  },
+
+  "planQuotas": {
+    "start": { "maxTerminals": 2, "maxVenues": 1, "maxStaff": 3 },
+    "standard": { "maxTerminals": 5, "maxVenues": 3, "maxStaff": 25 },
+    "pro": { "maxTerminals": 50, "maxVenues": 50, "maxStaff": 1000 }
+  }
 }

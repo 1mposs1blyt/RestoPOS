@@ -26,8 +26,12 @@
 //! `register_receipt` при неизвестном исходе идёт спрашивать сам ФР, что
 //! он записал последним (см. `recover_unknown`).
 
+// src/fiscal/mod.rs
+pub mod atol;
 pub mod commands;
 pub mod emulator;
+
+pub use commands::*;
 
 use serde::{Deserialize, Serialize};
 
@@ -231,28 +235,31 @@ pub type FiscalResult<T> = Result<T, FiscalError>;
 /// Порядок живёт здесь, в `register_with_recovery`, и при смене модели
 /// не переписывается.
 pub trait FiscalDevice: Send {
-    fn status(&mut self) -> FiscalResult<DeviceStatus>;
-    fn open_shift(&mut self, cashier_name: &str) -> FiscalResult<i64>;
-    fn close_shift(&mut self, cashier_name: &str) -> FiscalResult<ZReport>;
-    /// X-отчёт: срез без гашения, смену не закрывает.
-    fn x_report(&mut self) -> FiscalResult<ZReport>;
-    fn register_receipt(&mut self, request: &ReceiptRequest) -> FiscalResult<FiscalReceipt>;
-    /// Последний документ в памяти ФН. Единственный способ узнать, что
-    /// успела записать ККТ до обрыва.
-    fn last_receipt(&mut self) -> FiscalResult<Option<FiscalReceipt>>;
-
-    /// Доступ к сценариям отказов — есть только у эмулятора.
-    ///
-    /// Явным методом, а не приведением типа через `Any`: у настоящей ККТ
-    /// «потеряй следующий ответ» не существует, и `None` здесь — это
-    /// содержательный ответ, а не неудачный каст. В релизной сборке метода
-    /// нет вовсе.
-    #[cfg(debug_assertions)]
-    fn as_emulator(&mut self) -> Option<&mut emulator::Emulator> {
+    fn status(&mut self) -> Result<DeviceStatus, FiscalError>;
+    fn open_shift(&mut self, cashier: &str) -> Result<i64, FiscalError>;
+    fn close_shift(&mut self, cashier: &str) -> Result<ZReport, FiscalError>;
+    fn x_report(&mut self) -> Result<ZReport, FiscalError>;
+    fn register(&mut self, request: &ReceiptRequest) -> Result<FiscalReceipt, FiscalError>;
+    fn last_receipt(&mut self) -> Result<Option<FiscalReceipt>, FiscalError>;
+    fn as_emulator(&mut self) -> Option<&mut Emulator> {
         None
     }
-}
 
+    /// Тестовая печать нефискального чека для проверки связи
+    #[allow(dead_code)]
+    fn print_test_receipt(&mut self) -> Result<(), String>;
+
+    /// Печать картинки (логотип на чеке, купон, QR из файла) нефискальным
+    /// документом.
+    ///
+    /// Путь — к файлу на машине терминала, а не к ассету фронта: картинку
+    /// читает драйвер, а он про раздачу Vite ничего не знает.
+    /// `scale_percent` — доля от исходного размера (1..100): печатающая головка
+    /// узкая (384 точки на 58 мм, 576 на 80 мм), и картинка шире неё
+    /// обрезается по краю, а не ужимается сама.
+    #[allow(dead_code)]
+    fn print_image(&mut self, path: &str, scale_percent: u32) -> Result<(), String>;
+}
 /// Исход регистрации для вызывающего.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
@@ -283,11 +290,19 @@ pub enum RegistrationOutcome {
 /// Сравнение идёт по `client_id`, а не по сумме: два одинаковых заказа
 /// на 420 рублей подряд — обычное дело в фастфуде, и по сумме свой чек
 /// от чужого не отличить.
+use crate::fiscal::emulator::Emulator;
+
+// Если LastReceiptStatus еще не объявлен в проекте, добавьте его структуру:
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LastReceiptStatus {
+    pub is_printed: bool,
+    pub fiscal_number: Option<String>,
+}
 pub fn register_with_recovery(
     device: &mut dyn FiscalDevice,
     request: &ReceiptRequest,
 ) -> RegistrationOutcome {
-    match device.register_receipt(request) {
+    match device.register(request) {
         Ok(receipt) => RegistrationOutcome::Registered { receipt, recovered: false },
 
         Err(FiscalError::Unknown(message)) => match device.last_receipt() {

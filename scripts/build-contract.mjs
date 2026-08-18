@@ -65,6 +65,75 @@ for (const role of contract.roles) {
   }
 }
 
+// ── Тарифы ──────────────────────────────────────────────────────────────────
+//
+// Проверок здесь больше, чем у прав, и не от занудства: тариф — это механизм
+// монетизации, и ошибка в нём либо отдаёт оплаченный модуль бесплатно, либо
+// отбирает у клиента то, за что он заплатил. Оба случая замечают не в тестах.
+
+const QUOTA_FIELDS = ["maxTerminals", "maxVenues", "maxStaff"];
+
+// Коды уходят в оба языка ключами объекта и словаря, поэтому держим их
+// пригодными для идентификатора: «multi-venue» с дефисом сгенерировал бы
+// синтаксически неверный TypeScript, и упало бы это уже в чужом файле.
+for (const code of [...contract.planCodes, ...contract.featureCodes]) {
+  if (!/^[a-z][a-z0-9_]*$/.test(code)) {
+    throw new Error(
+      `код «${code}»: допустимы строчные латинские буквы, цифры и подчёркивание`,
+    );
+  }
+}
+
+for (const plan of contract.planCodes) {
+  if (!(plan in contract.planFeatures)) {
+    throw new Error(`planFeatures: не описан тариф «${plan}»`);
+  }
+  if (!(plan in contract.planQuotas)) {
+    throw new Error(`planQuotas: не описан тариф «${plan}»`);
+  }
+  for (const feature of contract.planFeatures[plan]) {
+    if (!contract.featureCodes.includes(feature)) {
+      throw new Error(`planFeatures.${plan}: «${feature}» нет в featureCodes`);
+    }
+  }
+  for (const field of QUOTA_FIELDS) {
+    const value = contract.planQuotas[plan][field];
+    if (!Number.isInteger(value) || value < 1) {
+      throw new Error(
+        `planQuotas.${plan}.${field}: ожидалось целое ≥ 1, получено ${JSON.stringify(value)}`,
+      );
+    }
+  }
+}
+for (const plan of Object.keys(contract.planFeatures)) {
+  if (!contract.planCodes.includes(plan)) {
+    throw new Error(`planFeatures: тарифа «${plan}» нет в planCodes`);
+  }
+}
+
+// Лестница обязана расти. `planCodes` перечислены от дешёвого к дорогому, и
+// апгрейд, который что-то ОТБИРАЕТ, — это не опечатка, а счёт клиента за то,
+// чего он лишился. Ловим на сборке, а не по обращению в поддержку.
+for (let i = 1; i < contract.planCodes.length; i += 1) {
+  const lower = contract.planCodes[i - 1];
+  const upper = contract.planCodes[i];
+
+  for (const feature of contract.planFeatures[lower]) {
+    if (!contract.planFeatures[upper].includes(feature)) {
+      throw new Error(
+        `planFeatures: «${upper}» дороже «${lower}», но не включает «${feature}»`,
+      );
+    }
+  }
+  for (const field of QUOTA_FIELDS) {
+    if (contract.planQuotas[upper][field] < contract.planQuotas[lower][field]) {
+      throw new Error(
+        `planQuotas: «${upper}» дороже «${lower}», но ${field} меньше`,
+      );
+    }
+  }
+}
+
 const rolePermissions = contract.roles
   .map((role) => {
     const list = contract.rolePermissions[role]

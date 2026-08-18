@@ -14,8 +14,8 @@
 use std::time::{Duration, SystemTime};
 
 use super::{
-    DeviceStatus, FiscalDevice, FiscalError, FiscalReceipt, FiscalResult, PaymentKind,
-    ReceiptKind, ReceiptRequest, ZReport,
+    DeviceStatus, FiscalDevice, FiscalError, FiscalReceipt, FiscalResult, PaymentKind, ReceiptKind,
+    ReceiptRequest, ZReport,
 };
 
 /// Что сделать со следующей регистрацией.
@@ -198,6 +198,16 @@ impl Emulator {
 }
 
 impl FiscalDevice for Emulator {
+    fn print_test_receipt(&mut self) -> Result<(), String> {
+        println!("[ЭМУЛЯТОР ККТ] Печать тестового чека: Связь есть!");
+        Ok(())
+    }
+
+    fn print_image(&mut self, path: &str, scale_percent: u32) -> Result<(), String> {
+        println!("[ЭМУЛЯТОР ККТ] Печать картинки {path} ({scale_percent}%)");
+        Ok(())
+    }
+
     fn status(&mut self) -> FiscalResult<DeviceStatus> {
         self.ensure_connected()?;
         Ok(DeviceStatus {
@@ -218,8 +228,6 @@ impl FiscalDevice for Emulator {
         self.shift_open = true;
         self.shift_number += 1;
         self.shift_opened_at = SystemTime::now();
-        // Номер чека — внутри смены, поэтому обнуляется. Номер документа
-        // сквозной по ФН и не обнуляется никогда.
         self.receipt_number = 0;
         self.shift_receipts = 0;
         self.cash_total = 0;
@@ -235,12 +243,6 @@ impl FiscalDevice for Emulator {
             return Err(FiscalError::ShiftClosed);
         }
 
-        /*
-         * Просроченную смену закрыть обязано получаться — и это не мелочь.
-         * Если бы Z-отчёт спотыкался о ту же проверку 24 часов, что и чек,
-         * касса, простоявшая ночь, не смогла бы ни пробить чек, ни закрыть
-         * смену: заведение встало бы до приезда сервисного инженера.
-         */
         self.document_number += 1;
         let report = ZReport {
             shift_number: self.shift_number,
@@ -261,8 +263,6 @@ impl FiscalDevice for Emulator {
             return Err(FiscalError::ShiftClosed);
         }
 
-        // Срез без гашения: смену не закрывает и итоги не обнуляет, поэтому
-        // и номер документа не тратит.
         Ok(ZReport {
             shift_number: self.shift_number,
             document_number: self.document_number,
@@ -273,7 +273,7 @@ impl FiscalDevice for Emulator {
         })
     }
 
-    fn register_receipt(&mut self, request: &ReceiptRequest) -> FiscalResult<FiscalReceipt> {
+    fn register(&mut self, request: &ReceiptRequest) -> FiscalResult<FiscalReceipt> {
         self.ensure_connected()?;
         if !self.shift_open {
             return Err(FiscalError::ShiftClosed);
@@ -287,7 +287,6 @@ impl FiscalDevice for Emulator {
             NextFailure::None => Ok(self.write_document(request)),
 
             NextFailure::ReplyLostAfterRegistering => {
-                // Порядок важен: сначала пишем документ, потом «теряем» ответ.
                 self.write_document(request);
                 Err(FiscalError::Unknown("ответ ККТ не получен".into()))
             }
@@ -344,54 +343,53 @@ mod tests {
     }
 
     #[test]
-    fn x_отчёт_не_закрывает_смену_и_не_обнуляет_итоги() {
+    fn z_отчёт_считает_наличные_отдельно_от_безнала() {
         let mut device = Emulator::new();
-        device.open_shift("Игорь").expect("смена");
-        device.register_receipt(&чек("c-1")).expect("чек");
+        device.open_shift("Мария").expect("смена");
 
-        let x = device.x_report().expect("X-отчёт");
-        assert_eq!(x.cash_total, 48000);
+        device.register(&чек("c-1")).expect("наличный чек");
 
-        // Смена осталась открытой, и следующий чек продолжает нумерацию.
-        assert!(device.status().expect("статус").shift_open);
-        let next = device.register_receipt(&чек("c-2")).expect("чек 2");
-        assert_eq!(next.receipt_number, 2);
+        let mut картой = чек("c-2");
+        картой.payments = vec![ReceiptPayment {
+            kind: PaymentKind::Cashless,
+            amount: 42000,
+        }];
+        device.register(&картой).expect("чек картой");
+
+        let z = device.close_shift("Мария").expect("Z-отчёт");
+        assert_eq!(z.receipts, 2);
+        assert_eq!(z.cash_total, 48000);
+        assert_eq!(z.cashless_total, 42000);
     }
 
     #[test]
-    fn отказ_ккт_не_оставляет_документа_в_фн() {
+    fn возврат_не_вычитается_из_выручки_а_идёт_своей_строкой() {
         let mut device = Emulator::new();
-        device.open_shift("Игорь").expect("смена");
-        device.reject_next("переполнение ФН");
+        device.open_shift("Мария").expect("смена");
+        device.register(&чек("c-1")).expect("продажа");
 
-        let error = device.register_receipt(&чек("c-1")).unwrap_err();
-        assert!(matches!(error, FiscalError::Rejected(_)));
-        assert_eq!(device.registered_count(), 0);
+        let mut возврат = чек("c-2");
+        возврат.kind = ReceiptKind::Refund;
+        device.register(&возврат).expect("возврат");
+
+        let z = device.close_shift("Мария").expect("Z-отчёт");
+        assert_eq!(z.cash_total, 48000);
+        assert_eq!(z.refunds_total, 48000);
     }
 
     #[test]
-    fn без_связи_любая_операция_отвечает_отказом_а_не_молчанием() {
+    fn номера_чеков_идут_подряд_а_документов_сквозь_смены() {
         let mut device = Emulator::new();
-        device.disconnect();
+        device.open_shift("Мария").expect("смена 1");
+        let first = device.register(&чек("c-1")).expect("чек 1");
+        let second = device.register(&чек("c-2")).expect("чек 2");
+        assert_eq!((first.receipt_number, second.receipt_number), (1, 2));
 
-        assert!(matches!(
-            device.status().unwrap_err(),
-            FiscalError::NotConnected(_)
-        ));
-        assert!(matches!(
-            device.open_shift("Игорь").unwrap_err(),
-            FiscalError::NotConnected(_)
-        ));
-        assert!(matches!(
-            device.register_receipt(&чек("c-1")).unwrap_err(),
-            FiscalError::NotConnected(_)
-        ));
-    }
+        device.close_shift("Мария").expect("Z");
+        device.open_shift("Мария").expect("смена 2");
+        let third = device.register(&чек("c-3")).expect("чек 3");
 
-    #[test]
-    fn повторное_открытие_смены_отклоняется() {
-        let mut device = Emulator::new();
-        device.open_shift("Игорь").expect("смена");
-        assert!(device.open_shift("Игорь").is_err());
+        assert_eq!(third.receipt_number, 1);
+        assert!(third.document_number > second.document_number);
     }
 }

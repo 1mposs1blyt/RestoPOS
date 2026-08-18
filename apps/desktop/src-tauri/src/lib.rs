@@ -1,5 +1,7 @@
+// src/lib.rs
+pub mod fiscal;
 mod acquiring;
-mod fiscal;
+// mod fiscal;
 mod printing;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

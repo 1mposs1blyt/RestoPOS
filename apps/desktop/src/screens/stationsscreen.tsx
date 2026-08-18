@@ -5,17 +5,10 @@ import { useAccess } from "../app/access";
 import { useStations } from "../state/stations";
 import { usePrinting } from "../state/printing";
 import { isTauri } from "../lib/printer";
+import { invoke } from "@tauri-apps/api/core";
 
 /**
  * Станции приготовления и их выводы.
- *
- * Здесь настраивается ровно то, о чём весь механизм: у станции может быть
- * экран, принтер, оба сразу или ни одного. Дублирование марки на бумагу
- * при живом мониторе — это второй вывод у станции, а не отдельный режим.
- *
- * Станция без включённого экрана работает «по бумаге»: отмечать готовность
- * на ней некому, поэтому позиции считаются готовыми сразу после отправки.
- * Экран показывает это явно — иначе настройка молча меняет поведение кухни.
  */
 export function StationsScreen() {
   const { can } = useAccess();
@@ -62,6 +55,9 @@ export function StationsScreen() {
           </p>
         )}
 
+        {/* Блок управления и тестирования Фискального Регистратора (ККТ) */}
+        <FiscalDeviceCard />
+
         {stations.map((station) => (
           <section
             key={station.id}
@@ -83,7 +79,7 @@ export function StationsScreen() {
                   "rounded-md px-2 py-1 text-xs font-bold",
                   hasScreenOf(station.id)
                     ? "bg-emerald-950/70 text-emerald-300"
-                    : "bg-amber-950/70 text-amber-300",
+                    : "bg-amber-950/70 text-amber-300"
                 )}
               >
                 {hasScreenOf(station.id)
@@ -142,6 +138,81 @@ export function StationsScreen() {
         <PrintQueue />
       </div>
     </div>
+  );
+}
+
+/**
+ * Карточка тестирования Фискального Регистратора (ККТ)
+ */
+function FiscalDeviceCard() {
+  const [isTesting, setIsTesting] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{
+    text: string;
+    isError: boolean;
+  } | null>(null);
+
+  const handleFiscalTest = async () => {
+    if (!isTauri()) {
+      setStatusMessage({
+        text: "Печать доступна только в приложении кассы (Tauri).",
+        isError: true,
+      });
+      return;
+    }
+
+    setIsTesting(true);
+    setStatusMessage(null);
+
+    try {
+      await invoke("fiscal_print_test");
+      setStatusMessage({
+        text: "Тестовый чек успешно отправлен на фискальный регистратор!",
+        isError: false,
+      });
+    } catch (error) {
+      setStatusMessage({
+        text: `Ошибка ККТ: ${typeof error === "string" ? error : JSON.stringify(error)}`,
+        isError: true,
+      });
+    } finally {
+      setIsTesting(false);
+    }
+  };
+
+  return (
+    <section className="space-y-3 rounded-xl border border-slate-800 bg-slate-950/50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-bold uppercase tracking-wider text-slate-300">
+            Фискальный регистратор (ККТ)
+          </h2>
+          <p className="text-xs text-slate-400">
+            Проверка связи и вывод тестового документа на кассовом аппарате
+          </p>
+        </div>
+        <button
+          type="button"
+          disabled={isTesting}
+          onClick={handleFiscalTest}
+          className="min-h-11 rounded-lg border border-orange-500/40 bg-orange-500/20 px-4 text-sm font-bold text-orange-300 transition hover:bg-orange-500/30 active:scale-95 disabled:opacity-50"
+        >
+          {isTesting ? "Печать..." : "Тест печати ККТ"}
+        </button>
+      </div>
+
+      {statusMessage && (
+        <p
+          className={cn(
+            "rounded-lg p-3 text-xs font-semibold",
+            statusMessage.isError
+              ? "border border-rose-900/60 bg-rose-950/40 text-rose-300"
+              : "border border-emerald-900/60 bg-emerald-950/40 text-emerald-300"
+          )}
+        >
+          {statusMessage.text}
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -206,7 +277,7 @@ function OutputRow({
           output.isEnabled
             ? "bg-emerald-600 text-slate-950"
             : "border border-slate-700 bg-slate-800 text-slate-400",
-          !canManage && "pointer-events-none opacity-60",
+          !canManage && "pointer-events-none opacity-60"
         )}
       >
         {output.isEnabled ? "Включён" : "Выключен"}
@@ -252,9 +323,6 @@ const JOB_STATUS_STYLES: Record<PrintJob["status"], string> = {
 
 /**
  * Очередь заданий печати.
- *
- * Показываем её человеку намеренно: упавшая марка означает блюдо, которое
- * никто не готовит, и узнать об этом надо здесь, а не от гостя через полчаса.
  */
 function PrintQueue() {
   const { jobs, retry, reprint, clearFinished, failedCount } = usePrinting();
@@ -299,7 +367,7 @@ function PrintQueue() {
                 <span
                   className={cn(
                     "rounded-md px-2 py-1 text-xs font-bold",
-                    JOB_STATUS_STYLES[job.status],
+                    JOB_STATUS_STYLES[job.status]
                   )}
                 >
                   {JOB_STATUS_LABELS[job.status]}
