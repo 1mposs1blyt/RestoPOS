@@ -42,6 +42,25 @@ export function isTauri(): boolean {
  * ESC/POS-команда, уходящая тому же принтеру. Отдельного «драйвера ящика»
  * не существует — поэтому и хост с портом те же, что у печати.
  */
+/**
+ * Вызов команды печати с внятной ошибкой.
+ *
+ * `invoke` отклоняет промис сырым значением из `Err(String)` — строкой,
+ * а не `Error`. Экраны проверяют `error instanceof Error`, и без этой обёртки
+ * причина отказа теряется: в очереди печати вместо «принтер не отвечает»
+ * оседает общая подпись.
+ */
+async function call<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (reason) {
+    throw reason instanceof Error ? reason : new Error(String(reason));
+  }
+}
+
 export async function openCashDrawer(host: string, port: number): Promise<void> {
   if (!isTauri()) {
     throw new Error(
@@ -49,7 +68,34 @@ export async function openCashDrawer(host: string, port: number): Promise<void> 
     );
   }
 
-  await invoke("open_cash_drawer", { host, port });
+  await call("open_cash_drawer", { host, port });
+}
+
+/**
+ * Порт, на котором у АТОЛ слушает драйвер ККТ.
+ *
+ * Признак того, что за адресом стоит касса, а не сырой чековый принтер:
+ * ESC/POS в этот порт не уедет, печатать надо драйвером.
+ */
+export const ATOL_DRIVER_PORT = 5555;
+
+/**
+ * Нефискальная печать строк на ККТ АТОЛ.
+ *
+ * Для кухонных марок на точках, где отдельного принтера нет и печатает
+ * та же касса. Скрипт драйвера собирает Rust — фронт отдаёт только строки,
+ * и это та же граница, что у чека: фронт решает ЧТО печатать, Rust — КАК.
+ */
+export async function printAtolLines(
+  host: string,
+  port: number,
+  lines: string[],
+): Promise<void> {
+  if (!isTauri()) {
+    throw new Error("Печать доступна только в приложении кассы, не в браузере");
+  }
+
+  await call("atol_print_lines", { host, port, lines });
 }
 
 export async function printTicket(request: PrintTicketRequest): Promise<void> {
@@ -62,5 +108,5 @@ export async function printTicket(request: PrintTicketRequest): Promise<void> {
     );
   }
 
-  await invoke("print_ticket", { request });
+  await call("print_ticket", { request });
 }

@@ -130,7 +130,6 @@
       "kitchen.view",
       "kitchen.item.status",
       "print.reprint",
-      "station.manage",
       "hall.layout.edit",
       "menu.stoplist",
       "menu.edit",
@@ -152,7 +151,7 @@
       "menu.stoplist",
       "staff.self"
     ],
-    "support": ["terminal.service"]
+    "support": ["terminal.service", "station.manage"]
   },
 
   "errorCodes": [

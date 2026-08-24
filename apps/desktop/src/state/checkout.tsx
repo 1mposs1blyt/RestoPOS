@@ -12,6 +12,7 @@ import { useSession } from "../app/session";
 import { findPaymentType } from "../data/payment-types";
 import { newId } from "../lib/storage";
 import { toMinor } from "../lib/money";
+import { unitPrice } from "../lib/order-price";
 import { buildReceiptLines, type ReceiptLineSource } from "../lib/receipt-lines";
 import {
   acquiringPay,
@@ -115,7 +116,7 @@ const CheckoutContext = createContext<CheckoutValue | null>(null);
 
 export function CheckoutProvider({ children }: { children: ReactNode }) {
   const { staff } = useSession();
-  const { kkm } = useDevices();
+  const { kkm, fiscalKkm } = useDevices();
   const { findMenuItem } = useMenu();
   const { cashShift } = useShifts();
   const {
@@ -136,7 +137,9 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
    */
   const busyRef = useRef(false);
 
-  const isNonFiscal = kkm === undefined;
+  // Смотрим на фискализирующую ККМ: касса с выключенной фискализацией
+  // остаётся принтером и расчёт не блокирует.
+  const isNonFiscal = fiscalKkm === undefined;
 
   const pay = useCallback(
     async (orderId: UUID, drafts: PaymentDraft[]): Promise<CheckoutStage> => {
@@ -584,14 +587,17 @@ function receiptItems(
     // Сторнированная позиция в чек не идёт: из суммы она выпала,
     // а в фискальном документе ей взяться неоткуда.
     .filter((item) => item.status !== "voided")
-    .map((item) => {
-      const menuItem = findMenuItem(item.menuItemId);
-      return {
-        name: menuItem?.name ?? "Позиция",
-        quantity: item.quantity,
-        unitPrice: menuItem?.price ?? "0.00",
-      };
-    });
+    .map((item) => ({
+      // Название берём из меню — оно не деньги, и свежее даже лучше.
+      name: findMenuItem(item.menuItemId)?.name ?? "Позиция",
+      quantity: item.quantity,
+      /*
+       * А цена — из самой позиции: фискальный документ обязан повторять
+       * то, за что гость заплатил. Правка прейскуранта между набором чека
+       * и нажатием «Оплатить» не должна попасть в ФН.
+       */
+      unitPrice: unitPrice(item, findMenuItem),
+    }));
 
   return buildReceiptLines(sources, total).map((line) => ({
     name: line.name,

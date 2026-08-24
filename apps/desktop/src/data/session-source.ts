@@ -213,7 +213,54 @@ function featuresOfPlan(code: PlanCode): FeatureCode[] {
   ];
 }
 
+/**
+ * Сервисный код техподдержки.
+ *
+ * Задаётся `VITE_SERVICE_PIN` в `.env.local`; значение по умолчанию нужно,
+ * чтобы вход работал на терминале, куда файл окружения не клали.
+ */
+const SERVICE_PIN = import.meta.env.VITE_SERVICE_PIN ?? "041978";
+
+/**
+ * Вендорский инженер — **не сотрудник заведения**, и поэтому его нет ни в
+ * демо-наборе, ни в `staff` узла: схема разрешает там только четыре роли
+ * заведения (`staff_role_check`), а попав в `staff`, он занял бы место
+ * в квоте `max_staff` и светился бы у менеджера в списке персонала.
+ * Подробнее — `docs/access.md` §8.
+ *
+ * Отсюда же и то, что вход этот **локальный**. Техподдержку зовут ровно
+ * тогда, когда что-то не работает, — сплошь и рядом это сам узел. Вход,
+ * который ходит за правами в лежащий узел, бесполезен именно в тот момент,
+ * ради которого существует.
+ */
+const SERVICE_STAFF: Staff = {
+  id: "service-terminal",
+  organizationId: "",
+  fullName: "Тех. поддержка",
+  role: "support",
+};
+
+/** Набранное может оказаться началом сервисного кода. */
+export function isServicePrefix(pin: string): boolean {
+  return pin.length < SERVICE_PIN.length && SERVICE_PIN.startsWith(pin);
+}
+
+/** Набранное — сервисный код целиком. */
+export function isServicePin(pin: string): boolean {
+  return pin === SERVICE_PIN;
+}
+
 export async function authenticate(pin: string): Promise<AuthResult> {
+  /*
+   * Сервисный вход проверяется до всего остального и никуда не ходит.
+   * Прав у него ровно одно — `terminal.service`: ни заказов, ни денег
+   * инженер вендора не видит, и это не ограничение удобства, а условие,
+   * при котором чужой человек в чужой кассе вообще допустим.
+   */
+  if (isServicePin(pin)) {
+    return { staff: SERVICE_STAFF, permissions: permissionsOf("support") };
+  }
+
   if (!isNodeConfigured()) {
     const staff = demoStaff(pin);
     return { staff, permissions: permissionsOf(staff.role) };

@@ -18,7 +18,8 @@ import type {
   UUID,
 } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
-import { multiplyMoney, sumMoney } from "../lib/money";
+import { sumMoney, ZERO_MONEY } from "../lib/money";
+import { lineTotal } from "../lib/order-price";
 import { computeTotals, type OrderTotals } from "../lib/discount";
 import { refundablePayments } from "../lib/refund";
 import { findDiscountType } from "../data/discount-types";
@@ -39,7 +40,12 @@ import { useStations } from "./stations";
  *
  * Пока это единственный источник данных, но форма подобрана под будущий обмен
  * с бэкендом: сущности хранятся плоско и по идентификаторам, ровно как приходят
- * из API, а не деревом. Пересчёт сумм — из меню, а не из снимка цены в позиции.
+ * из API, а не деревом.
+ *
+ * **Цена лежит снимком в самой позиции** (`OrderItem.price`), а не берётся
+ * из меню при каждом пересчёте: меню правят в течение смены, и без снимка
+ * уже собранный чек менялся бы задним числом. Единственное место, где это
+ * решается, — `lib/order-price.ts`.
  *
  * Инвариант №6 (append-only для `order_items`) выражен статусом позиции:
  * пока она `new` — ещё не ушла на кухню и её можно править или удалить;
@@ -246,12 +252,10 @@ export function OrdersProvider({
            *            оба уровня значит взять с гостя дважды.
            */
           .filter((item) => item.status !== "voided" && item.status !== "split")
-          .map((item) => {
-            const menuItem = findMenuItem(item.menuItemId);
-            return menuItem
-              ? multiplyMoney(menuItem.price, item.quantity)
-              : "0.00";
-          }),
+          // Цена берётся из самой позиции — снимок на момент добавления
+          // (`lib/order-price.ts`). Меню тут только запасной вариант
+          // для заказов, набранных до появления поля.
+          .map((item) => lineTotal(item, findMenuItem)),
       ),
     [itemsOfOrder, findMenuItem],
   );
@@ -364,19 +368,28 @@ export function OrdersProvider({
   );
 
   /** Ту же позицию в статусе `new` редьюсер склеит, увеличив количество. */
-  const addItem = useCallback((orderId: UUID, menuItemId: UUID) => {
-    dispatch({
-      type: "item/add",
-      item: {
-        id: newId(),
-        orderId,
-        menuItemId,
-        quantity: 1,
-        status: "new",
-        modifierIds: [],
-      },
-    });
-  }, []);
+  const addItem = useCallback(
+    (orderId: UUID, menuItemId: UUID) => {
+      dispatch({
+        type: "item/add",
+        item: {
+          id: newId(),
+          orderId,
+          menuItemId,
+          quantity: 1,
+          /*
+           * Цену снимаем здесь и запоминаем в позиции. Дальше по чеку она
+           * уже не пересчитывается: правка меню посреди смены не должна
+           * менять сумму, которую гостю назвали при заказе.
+           */
+          price: findMenuItem(menuItemId)?.price ?? ZERO_MONEY,
+          status: "new",
+          modifierIds: [],
+        },
+      });
+    },
+    [findMenuItem],
+  );
 
   const value = useMemo<OrdersValue>(
     () => ({

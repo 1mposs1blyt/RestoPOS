@@ -15,7 +15,8 @@ import { usePrinting } from "../state/printing";
 import { useStopList } from "../state/stoplist";
 import { useMenu } from "../state/menu";
 import { MenuNotice } from "./menunotice";
-import { formatMoney, multiplyMoney } from "../lib/money";
+import { formatMoney } from "../lib/money";
+import { lineTotal } from "../lib/order-price";
 import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
 
 /**
@@ -116,71 +117,102 @@ export function CounterScreen() {
   };
 
   return (
-    // Порядок колонок = порядок в разметке: чек, меню, очередь.
-    // Чек слева — как на экране заказа: кассир, привыкший к одному терминалу,
-    // не должен переучиваться на другом.
-    <div className="flex h-full w-full select-none gap-4 overflow-hidden p-4">
+    /*
+     * Раскладка та же, что на экране заказа: чек слева, сетка блюд по центру,
+     * категории колонкой справа, функции полосой внизу. Плюс очередь заказов
+     * с краю — её на экране заказа нет, а на прилавке без неё нельзя:
+     * кассир тут обычно сам и готовит.
+     *
+     * Без внешних отступов и скруглений: на моноблоке 1024x768 рамка по кругу
+     * съедает проценты площади ни за что. Панели разделены границей
+     * в один пиксель, а не воздухом.
+     */
+    <div className="flex h-full w-full select-none overflow-hidden bg-slate-950">
       <CounterCheck
         order={counterOrder}
         items={items}
         total={total}
         served={served}
-        canPay={can("payment.accept")}
         canEdit={can("order.item.add")}
         onQuantity={setQuantity}
         onRemove={removeItem}
-        onPay={goToPayment}
-        onReset={handleReset}
         onCloseOverlay={() => setServed(null)}
       />
 
-      <div className="flex flex-1 flex-col gap-4 overflow-hidden">
-        <div className="flex shrink-0 flex-wrap gap-2">
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {menuStatus === "ready" ? null : (
+            <div className="p-3">
+              <MenuNotice />
+            </div>
+          )}
+
+          {/* Плотнее и площе прежнего: в запару важно, сколько позиций видно
+              без прокрутки, а не мягкость углов. Цену держим крупной —
+              по ней кассир сверяется с гостем вслух. */}
+          <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(150px,1fr))] content-start gap-2 overflow-y-auto p-3">
+            {categoryItems.map((menuItem) => (
+              <button
+                key={menuItem.id}
+                type="button"
+                disabled={isStopped(menuItem.id) || !can("order.item.add")}
+                onClick={() => addItem(counterOrder.id, menuItem.id)}
+                className={cn(
+                  "flex h-24 flex-col justify-between rounded border-b-4 p-2 text-left transition",
+                  isStopped(menuItem.id)
+                    ? "cursor-not-allowed border-slate-800 bg-slate-900/60 opacity-50"
+                    : "border-orange-500/70 bg-slate-800 active:scale-95 hover:bg-slate-700",
+                )}
+              >
+                <span className="line-clamp-3 text-sm font-bold leading-tight text-slate-100">
+                  {menuItem.name}
+                </span>
+                {isStopped(menuItem.id) ? (
+                  <span className="text-xs font-bold uppercase text-rose-400">
+                    Стоп-лист
+                  </span>
+                ) : (
+                  <span className="text-base font-black tabular-nums text-orange-400">
+                    {formatMoney(menuItem.price)}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Полоса функций. Действия над заказом собраны в одном месте
+              и не разъезжаются по экрану — как в iikoFront. */}
+          <div className="flex shrink-0 gap-px border-t border-slate-800 bg-slate-800">
+            <CounterKey
+              label="Сброс"
+              disabled={items.length === 0}
+              onClick={handleReset}
+            />
+            <CounterKey
+              label={can("payment.accept") ? "К оплате" : "Оплату принимает кассир"}
+              tone="pay"
+              disabled={items.length === 0 || !can("payment.accept")}
+              onClick={goToPayment}
+            />
+          </div>
+        </div>
+
+        {/* Категории колонкой: строкой сверху они переносились на две
+            и съедали высоту сетки. */}
+        <div className="flex w-32 shrink-0 flex-col gap-px overflow-y-auto border-l border-slate-800 bg-slate-800">
           {categories.map((category) => (
             <button
               key={category.id}
               type="button"
               onClick={() => setPickedCategoryId(category.id)}
               className={cn(
-                "min-h-14 whitespace-nowrap rounded-xl border px-4 text-sm font-bold uppercase tracking-wider transition active:scale-95",
+                "min-h-14 shrink-0 px-3 py-2 text-left text-sm font-bold uppercase leading-tight tracking-wide transition",
                 activeCategoryId === category.id
-                  ? "border-transparent bg-orange-500 text-white shadow-md shadow-orange-500/10"
-                  : "border-slate-700/50 bg-slate-800 text-slate-400 hover:bg-slate-700/60",
+                  ? "bg-orange-500 text-white"
+                  : "bg-slate-900 text-slate-400 hover:bg-slate-800",
               )}
             >
               {category.name}
-            </button>
-          ))}
-        </div>
-
-        {menuStatus === "ready" ? null : <MenuNotice />}
-
-        <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(190px,1fr))] content-start gap-3 overflow-y-auto pr-1">
-          {categoryItems.map((menuItem) => (
-            <button
-              key={menuItem.id}
-              type="button"
-              disabled={isStopped(menuItem.id) || !can("order.item.add")}
-              onClick={() => addItem(counterOrder.id, menuItem.id)}
-              className={cn(
-                "group flex h-28 flex-col items-start justify-between rounded-2xl border p-4 text-left shadow-sm transition",
-                isStopped(menuItem.id)
-                  ? "cursor-not-allowed border-slate-800/40 bg-slate-900/40 opacity-50"
-                  : "border-slate-700/40 bg-slate-800/60 hover:border-slate-600/80 hover:bg-slate-800 active:scale-95",
-              )}
-            >
-              <span className="text-sm font-bold leading-tight text-slate-200 group-hover:text-white">
-                {menuItem.name}
-              </span>
-              {isStopped(menuItem.id) ? (
-                <span className="rounded-lg bg-rose-950/60 px-2 py-0.5 text-xs font-bold text-rose-400">
-                  Стоп-лист
-                </span>
-              ) : (
-                <span className="rounded-lg border border-slate-800/40 bg-slate-950/40 px-2 py-0.5 text-sm font-black tabular-nums text-orange-400">
-                  {formatMoney(menuItem.price)}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -207,7 +239,7 @@ function OrderQueue() {
   const canIssue = can("order.item.serve");
 
   return (
-    <div className="flex w-64 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950 shadow-2xl xl:w-72">
+    <div className="flex w-52 shrink-0 flex-col overflow-hidden border-l border-slate-800 bg-slate-950">
       <div className="flex items-baseline justify-between border-b border-slate-800 bg-slate-900 px-4 py-3">
         <h3 className="text-sm font-black uppercase tracking-wider text-slate-300">
           В работе
@@ -363,47 +395,36 @@ function CounterCheck({
   items,
   total,
   served,
-  canPay,
   canEdit,
   onQuantity,
   onRemove,
-  onPay,
-  onReset,
   onCloseOverlay,
 }: {
   order: Order;
   items: OrderItem[];
   total: Money;
   served: { number: number; payments: Payment[] } | null;
-  canPay: boolean;
   canEdit: boolean;
   onQuantity: (itemId: UUID, quantity: number) => void;
   onRemove: (itemId: UUID) => void;
-  onPay: () => void;
-  onReset: () => void;
   onCloseOverlay: () => void;
 }) {
   return (
-    <div className="relative flex w-80 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950 shadow-2xl xl:w-96">
-      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 p-4">
+    <div className="relative flex w-72 shrink-0 flex-col overflow-hidden border-r border-slate-800 bg-slate-950">
+      <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 p-3">
         <div>
           <h3 className="text-lg font-black text-emerald-400">
             Заказ № {order.number}
           </h3>
           <span className="text-xs text-slate-500">Расчёт на прилавке</span>
         </div>
-        {items.length > 0 && (
-          <button
-            type="button"
-            onClick={onReset}
-            className="min-h-11 rounded-lg border border-slate-700/50 bg-slate-800 px-4 text-sm font-semibold text-slate-400 transition hover:bg-slate-700 active:scale-95"
-          >
-            Сброс
-          </button>
-        )}
+        {/* Номер крупно: его называют гостю, и он же на ленте. */}
+        <span className="text-2xl font-black tabular-nums text-slate-600">
+          №{order.number}
+        </span>
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto p-4">
+      <div className="flex-1 space-y-1 overflow-y-auto p-2">
         {items.length === 0 ? (
           <div className="flex h-full flex-col items-center justify-center text-slate-600">
             <span className="mb-2 text-3xl">🥙</span>
@@ -422,22 +443,15 @@ function CounterCheck({
         )}
       </div>
 
-      <div className="space-y-3 border-t border-slate-800 bg-slate-900 p-4">
-        <div className="flex items-center justify-between px-1 text-lg font-black">
-          <span>ИТОГО:</span>
-          <span className="text-2xl tabular-nums text-emerald-400">
-            {formatMoney(total)}
-          </span>
-        </div>
-
-        <button
-          type="button"
-          disabled={items.length === 0 || !canPay}
-          onClick={onPay}
-          className="min-h-16 w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-base font-bold text-white shadow-lg shadow-emerald-900/20 transition hover:from-emerald-500 hover:to-teal-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-        >
-          К оплате
-        </button>
+      {/* Итог в чеке, действия — внизу экрана: сумма нужна глазу постоянно,
+          а «К оплате» нажимается один раз за заказ. */}
+      <div className="flex items-baseline justify-between border-t-2 border-slate-800 bg-slate-900 px-3 py-3">
+        <span className="text-sm font-bold uppercase tracking-wider text-slate-400">
+          Итого
+        </span>
+        <span className="text-3xl font-black tabular-nums text-emerald-400">
+          {formatMoney(total)}
+        </span>
       </div>
 
       {served !== null && (
@@ -503,15 +517,13 @@ function CounterLine({
   const menuItem = findMenuItem(item.menuItemId);
 
   return (
-    <div className="rounded-xl border border-slate-800/60 bg-slate-900 p-3">
+    <div className="rounded border-l-2 border-slate-700 bg-slate-900 p-2">
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 flex-1 truncate text-sm font-medium">
           {menuItem?.name ?? "Позиция удалена из меню"}
         </p>
         <span className="text-sm font-bold tabular-nums">
-          {menuItem
-            ? formatMoney(multiplyMoney(menuItem.price, item.quantity))
-            : "—"}
+          {formatMoney(lineTotal(item, findMenuItem))}
         </span>
       </div>
 
@@ -547,5 +559,42 @@ function CounterLine({
         </button>
       </div>
     </div>
+  );
+}
+
+/**
+ * Клавиша нижней панели прилавка.
+ *
+ * Та же, что на экране заказа (`orderscreen.tsx`): высота 64px вместо
+ * минимальных 44, потому что это самые нажимаемые кнопки смены, и в запару
+ * по ним попадают боковым зрением. Высота задаётся `min-h-16`, а не
+ * вертикальными паддингами: паддинги обнуляются сбросом вне слоя, и кнопка
+ * молча схлопывается.
+ */
+function CounterKey({
+  label,
+  onClick,
+  disabled = false,
+  tone = "plain",
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  tone?: "plain" | "pay";
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "min-h-16 flex-1 px-2 text-sm font-black uppercase leading-tight tracking-wide transition active:scale-95 disabled:pointer-events-none disabled:opacity-40",
+        tone === "pay"
+          ? "bg-orange-500 text-white hover:bg-orange-400"
+          : "bg-slate-900 text-slate-300 hover:bg-slate-800",
+      )}
+    >
+      {label}
+    </button>
   );
 }

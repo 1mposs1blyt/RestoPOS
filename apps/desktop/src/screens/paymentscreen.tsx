@@ -16,10 +16,10 @@ import {
   compareMoney,
   formatMoney,
   fromMinor,
-  multiplyMoney,
   toMinor,
   ZERO_MONEY,
 } from "../lib/money";
+import { lineTotal } from "../lib/order-price";
 import { splitPayment } from "../lib/payment-split";
 
 /**
@@ -258,9 +258,7 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
                     {menuItem?.name ?? "—"}
                   </span>
                   <span className="text-sm tabular-nums text-slate-400">
-                    {menuItem
-                      ? formatMoney(multiplyMoney(menuItem.price, item.quantity))
-                      : "—"}
+                    {formatMoney(lineTotal(item, findMenuItem))}
                   </span>
                 </li>
               );

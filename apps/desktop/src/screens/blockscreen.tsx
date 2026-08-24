@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { AuthForm } from "@restopos/ui-kit";
 import { useSession } from "../app/session";
+import { isServicePin, isServicePrefix } from "../data/session-source";
 
 /**
  * Экран блокировки терминала. Первый и единственный экран, доступный
@@ -33,6 +34,14 @@ export function BlockScreen() {
   return (
     <AuthForm
       onSubmit={handleSubmit}
+      /*
+       * Пин сотрудника — четыре цифры, сервисный код длиннее. Без этих
+       * трёх пропсов длинный код ввести нельзя: панель отправила бы первые
+       * четыре символа на проверку и очистила поле на полпути.
+       */
+      maxLength={12}
+      mayContinue={isServicePrefix}
+      accepts={isServicePin}
       error={error}
       backgroundUrl="/bg-logo.webp"
       productName="RestoPOS"

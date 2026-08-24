@@ -9,7 +9,8 @@ import type {
 import type { MenuItemLookup } from "../state/menu";
 import { findStaff } from "../data/session-source";
 import { computeTotals } from "./discount";
-import { fromMinor, multiplyMoney, sumMoney, toMinor, ZERO_MONEY } from "./money";
+import { fromMinor, sumMoney, toMinor, ZERO_MONEY } from "./money";
+import { lineTotal as itemLineTotal } from "./order-price";
 
 /**
  * Отчёты кассы.
@@ -165,9 +166,15 @@ function itemsOf(context: ReportContext, orders: Order[]): OrderItem[] {
   );
 }
 
+/**
+ * Стоимость строки в отчёте.
+ *
+ * Считается от цены, записанной в позицию, а не от текущей цены в меню:
+ * иначе вчерашний отчёт менялся бы после каждой правки прейскуранта,
+ * а блюдо, снятое с продажи, обнуляло бы прошлую выручку.
+ */
 function lineTotal(context: ReportContext, item: OrderItem): string {
-  const menuItem = context.findMenuItem(item.menuItemId);
-  return menuItem ? multiplyMoney(menuItem.price, item.quantity) : ZERO_MONEY;
+  return itemLineTotal(item, context.findMenuItem);
 }
 
 export const REPORTS: ReportDefinition[] = [

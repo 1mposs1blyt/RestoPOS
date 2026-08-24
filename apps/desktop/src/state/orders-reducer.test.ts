@@ -309,6 +309,29 @@ describe("деление блюда", () => {
     expect(next.items.b.quantity).toBe(0.5);
   });
 
+  it("доли наследуют цену исходной позиции", () => {
+    /*
+     * Цена — снимок на момент добавления (`lib/order-price.ts`). Потеряв её
+     * при делении, доли считались бы по текущему меню: блюдо, подорожавшее
+     * между заказом и делением счёта, подорожало бы и для гостя, который
+     * его уже съел.
+     */
+    const withPrice: OrdersState = {
+      ...served,
+      items: { "item-1": item({ status: "served", price: "420.00" }) },
+    };
+
+    const next = reducer(withPrice, {
+      type: "item/split",
+      itemId: "item-1",
+      parts: [0.5, 0.5],
+      ids: ["a", "b"],
+    });
+
+    expect(next.items.a.price).toBe("420.00");
+    expect(next.items.b.price).toBe("420.00");
+  });
+
   it("доли ссылаются на исходную позицию", () => {
     const next = reducer(served, {
       type: "item/split",

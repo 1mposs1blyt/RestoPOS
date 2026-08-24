@@ -84,7 +84,9 @@ describe("тип терминала", () => {
     );
     expect(routes).toContain("hall");
     expect(routes).toContain("kitchen");
-    expect(routes).toContain("stations");
+    // Станции сюда не входят: это настройка оборудования, у менеджера
+    // такого права нет — оно у техподдержки.
+    expect(routes).not.toContain("stations");
   });
 });
 
@@ -133,10 +135,15 @@ describe("право сотрудника", () => {
     }
   });
 
-  it("настройку станций видит только тот, у кого есть право", () => {
-    expect(routesFor(scope({ permissions: permissionsOf("manager") }))).toContain(
+  it("настройку станций видит только техподдержка", () => {
+    // Адреса принтеров, порты и тестовая печать — оборудование, а не
+    // управление заведением: ни у менеджера, ни у официанта его нет.
+    expect(routesFor(scope({ permissions: permissionsOf("support") }))).toContain(
       "stations",
     );
+    expect(
+      routesFor(scope({ permissions: permissionsOf("manager") })),
+    ).not.toContain("stations");
     expect(routesFor(scope())).not.toContain("stations");
   });
 });

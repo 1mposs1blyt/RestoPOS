@@ -254,7 +254,6 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
     "kitchen.view",
     "kitchen.item.status",
     "print.reprint",
-    "station.manage",
     "hall.layout.edit",
     "menu.stoplist",
     "menu.edit",
@@ -278,5 +277,6 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
   ],
   support: [
     "terminal.service",
+    "station.manage",
   ],
 };

@@ -21,6 +21,12 @@ export interface AuthFormProps {
   /** Произвольный контент вместо стандартного блока с названием. */
   brand?: ReactNode;
   length?: number;
+  /** До скольки символов можно продолжать набор (см. `PinPad`). */
+  maxLength?: number;
+  /** Набранное может быть началом длинного кода (см. `PinPad`). */
+  mayContinue?: (pin: string) => boolean;
+  /** Набранное — законченный длинный код (см. `PinPad`). */
+  accepts?: (pin: string) => boolean;
   error?: string | null;
   className?: string;
 }
@@ -34,6 +40,9 @@ export function AuthForm({
   backgroundUrl,
   brand,
   length = 4,
+  maxLength,
+  mayContinue,
+  accepts,
   error,
   className,
 }: AuthFormProps) {
@@ -78,7 +87,14 @@ export function AuthForm({
           <p className="text-xs text-slate-500">{hint}</p>
         </div>
 
-        <PinPad onSubmit={onSubmit} length={length} error={error} />
+        <PinPad
+          onSubmit={onSubmit}
+          length={length}
+          maxLength={maxLength}
+          mayContinue={mayContinue}
+          accepts={accepts}
+          error={error}
+        />
       </div>
     </div>
   );

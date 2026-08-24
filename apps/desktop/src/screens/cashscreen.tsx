@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { CashOperationKind } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { useAccess } from "../app/access";
@@ -11,6 +11,7 @@ import { formatMoney, fromMinor, toMinor, ZERO_MONEY } from "../lib/money";
 import {
   fiscalCloseShift,
   fiscalOpenShift,
+  fiscalStatus,
   fiscalXReport,
   type ZReport,
 } from "../lib/fiscal";
@@ -34,7 +35,7 @@ export function CashScreen() {
   const { cashShift, openCashShift, closeCashShift, recordCash, state } =
     useShifts();
   const { state: orders } = useOrders();
-  const { drawerDevice, kkm } = useDevices();
+  const { drawerDevice, kkm, fiscalKkm } = useDevices();
   const { staff } = useSession();
 
   const [dialog, setDialog] = useState<CashOperationKind | null>(null);
@@ -45,14 +46,77 @@ export function CashScreen() {
   const [busy, setBusy] = useState(false);
 
   /**
-   * ККМ не заведена — работаем без фискализации, как и на экране оплаты
-   * (`state/checkout.tsx`). Отчёты тогда чисто кассовые: сверять их не с чем.
+   * Работаем без фискализации — как и на экране оплаты (`state/checkout.tsx`).
+   *
+   * Два случая: ККМ не заведена вовсе либо заведена, но фискализация у неё
+   * выключена (мёртвый ФН, касса используется принтером). Отчёты тогда чисто
+   * кассовые: сверять их не с чем.
    */
-  const isNonFiscal = kkm === undefined;
+  const isNonFiscal = fiscalKkm === undefined;
+
+  /** Чем объяснять отказ: «нет ККМ» и «не фискализирует» — разные причины. */
+  const nonFiscalReason =
+    kkm === undefined
+      ? "ККМ не заведена"
+      : "у ККМ выключена фискализация";
+
+  /**
+   * Состояние смены в самой ККТ. `null` — ещё не спрашивали или не ответила.
+   *
+   * Спрашивать обязательно, потому что **смен две и они расходятся**. Кассовая
+   * смена живёт во фронте, смена ККТ — в фискальном накопителе, и открываются
+   * они одной кнопкой только при заведённой ККМ. Стоит открыть смену без ККМ,
+   * а завести её потом — и получается тупик: оплата падает с «смена в ККТ
+   * закрыта», а закрыть кассовую смену нельзя, потому что Z-отчёт снимать
+   * тоже нечего. Так уже случилось, и выйти из этого через интерфейс было
+   * невозможно.
+   */
+  const [kktShiftOpen, setKktShiftOpen] = useState<boolean | null>(null);
+
+  const refreshKkt = useCallback(async () => {
+    if (isNonFiscal) {
+      setKktShiftOpen(null);
+      return;
+    }
+    try {
+      const status = await fiscalStatus();
+      setKktShiftOpen(status.shiftOpen);
+    } catch {
+      // Молчащая ККТ — это не повод рисовать ошибку поверх экрана кассы:
+      // сюда заходят и просто посмотреть выручку. Состояние остаётся
+      // неизвестным, и подсказку мы не показываем.
+      setKktShiftOpen(null);
+    }
+  }, [isNonFiscal]);
+
+  useEffect(() => {
+    void refreshKkt();
+  }, [refreshKkt]);
+
+  /** Кассовая смена идёт, а в ККТ смена закрыта — тот самый рассинхрон. */
+  const needsKktShift = Boolean(cashShift) && kktShiftOpen === false;
+
+  /** Открыть смену в ККТ, не трогая уже открытую кассовую. */
+  const handleOpenKktShift = async () => {
+    setBusy(true);
+    try {
+      await fiscalOpenShift(staff?.fullName ?? "—");
+      await refreshKkt();
+      setNotice(null);
+    } catch (error) {
+      setNotice(
+        error instanceof Error
+          ? `Смена в ККТ не открыта: ${error.message}`
+          : "Смена в ККТ не открыта",
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const handleXReport = async () => {
     if (isNonFiscal) {
-      setNotice("ККМ не заведена — X-отчёт печатать нечем");
+      setNotice(`${nonFiscalReason} — X-отчёт печатать нечем`);
       return;
     }
     setBusy(true);
@@ -79,10 +143,21 @@ export function CashScreen() {
       closeCashShift();
       return;
     }
+    /*
+     * В ККТ смена уже закрыта — снимать Z-отчёт нечего, и требовать его
+     * значило бы запереть кассира: закрыть смену нельзя, потому что она
+     * закрыта. Закрываем кассовую и говорим, почему без отчёта.
+     */
+    if (kktShiftOpen === false) {
+      closeCashShift();
+      setNotice("Смена в ККТ была закрыта — Z-отчёт не снимался");
+      return;
+    }
     setBusy(true);
     try {
       setZReport(await fiscalCloseShift(staff?.fullName ?? "—"));
       closeCashShift();
+      await refreshKkt();
       setNotice(null);
     } catch (error) {
       setNotice(
@@ -110,6 +185,7 @@ export function CashScreen() {
     try {
       await fiscalOpenShift(staff?.fullName ?? "—");
       openCashShift(floatDraft);
+      await refreshKkt();
       setNotice(null);
     } catch (error) {
       setNotice(
@@ -174,6 +250,28 @@ export function CashScreen() {
         >
           {notice} · нажмите, чтобы скрыть
         </button>
+      )}
+
+      {/*
+        Рассинхрон двух смен. Кассир этого сам не увидит: на экране кассы
+        смена открыта, а падает — оплата, на другом экране и другими словами.
+        Поэтому говорим прямо здесь и даём кнопку, а не оставляем догадываться.
+      */}
+      {needsKktShift && (
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-rose-900/60 bg-rose-950/40 px-5 py-3">
+          <p className="text-sm text-rose-300">
+            <b>Смена в ККТ закрыта</b> — чеки пробиваться не будут. Кассовая
+            смена при этом идёт: её открыли, когда ККМ ещё не была заведена.
+          </p>
+          <button
+            type="button"
+            disabled={busy || !can("shift.open")}
+            onClick={handleOpenKktShift}
+            className="min-h-11 shrink-0 rounded-lg bg-rose-600 px-4 text-sm font-bold text-white transition active:scale-95 hover:bg-rose-500 disabled:pointer-events-none disabled:opacity-40"
+          >
+            Открыть смену в ККТ
+          </button>
+        </div>
       )}
 
       <div className="flex min-h-0 flex-1">

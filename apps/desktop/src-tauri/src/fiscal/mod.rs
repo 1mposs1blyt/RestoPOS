@@ -28,6 +28,9 @@
 
 // src/fiscal/mod.rs
 pub mod atol;
+/// Стенд «эмулятор + живая печать». Только отладочная сборка: см. `bench.rs`.
+#[cfg(debug_assertions)]
+pub mod bench;
 pub mod commands;
 pub mod emulator;
 
@@ -213,16 +216,20 @@ pub enum FiscalError {
     /// **Исход неизвестен.** Команда ушла, ответа нет. Чек мог быть
     /// зарегистрирован, а мог и нет — решать по состоянию ФН, а не гаданием.
     Unknown(String),
+
+    DeviceError(String), 
 }
 
 impl std::fmt::Display for FiscalError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            
             Self::NotConnected(m) => write!(f, "ККТ не отвечает: {m}"),
             Self::ShiftClosed => write!(f, "Кассовая смена закрыта"),
             Self::ShiftExpired => write!(f, "Смена идёт больше 24 часов, нужен Z-отчёт"),
             Self::Rejected(m) => write!(f, "ККТ отклонила чек: {m}"),
             Self::Unknown(m) => write!(f, "Исход регистрации неизвестен: {m}"),
+            Self::DeviceError(m) => write!(f, "Ошибка устройства: {m}"),
         }
     }
 }

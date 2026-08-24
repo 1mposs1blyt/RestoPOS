@@ -9,7 +9,7 @@ import {
 } from "react";
 import type { UUID } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
-import type { TaxSystem, VatRate } from "../lib/fiscal";
+import { fiscalConfigure, type TaxSystem, type VatRate } from "../lib/fiscal";
 
 /**
  * Оборудование терминала.
@@ -70,6 +70,19 @@ export interface Device {
    */
   taxSystem: TaxSystem;
   defaultVat: VatRate;
+  /**
+   * Пробивать ли на этой ККМ фискальные чеки.
+   *
+   * Выключается там, где касса физически есть и печатает, но фискализировать
+   * нечем: ФН исчерпан, просрочен или ККТ не зарегистрирована. Без этого
+   * выбор был бы между «завести ККМ и не продавать» (каждый расчёт упирается
+   * в отказ ФН) и «не заводить ККМ и не печатать вовсе» — а печать марок,
+   * логотипа и тестовой ленты от накопителя не зависит.
+   *
+   * Отдельным флагом, а не удалением карточки: адрес, порт и настройки
+   * остаются на месте и заработают в тот день, когда поставят живой ФН.
+   */
+  fiscalEnabled: boolean;
   /** Открывать денежный ящик этим устройством. */
   cashDrawer: boolean;
   /** Не давать работать, пока ящик открыт: деньги на виду — риск и соблазн. */
@@ -77,11 +90,31 @@ export interface Device {
   printDishes: boolean;
   printOrderNumber: boolean;
   printVat: boolean;
-  charsPerLine: number;
 
   /** Кто и когда остановил — чтобы «почему смена не фискализирована» имело ответ. */
   stoppedAt: string | null;
   stoppedBy: string | null;
+}
+
+/** Порт ККТ у АТОЛ по TCP/IP, если в карточке указан только хост. */
+const DEFAULT_KKT_PORT = 5555;
+
+/**
+ * Разбор поля «порт» карточки: `192.168.1.223` или `192.168.1.223:5555`.
+ *
+ * Порт разрешён в той же строке, потому что отдельного поля под него
+ * в карточке нет, а ККТ на нестандартном порту — обычное дело, когда
+ * их в заведении несколько за одним маршрутизатором.
+ */
+function splitAddress(value: string): [string, number] {
+  const at = value.lastIndexOf(":");
+  if (at < 0) return [value.trim(), DEFAULT_KKT_PORT];
+
+  const port = Number.parseInt(value.slice(at + 1), 10);
+  if (!Number.isFinite(port) || port <= 0 || port > 65535) {
+    return [value.trim(), DEFAULT_KKT_PORT];
+  }
+  return [value.slice(0, at).trim(), port];
 }
 
 export function makeDevice(kind: DeviceKind, model: string): Device {
@@ -92,18 +125,28 @@ export function makeDevice(kind: DeviceKind, model: string): Device {
     name: model,
     autoStart: true,
     isRunning: true,
-    portType: kind === "printer" ? "tcp" : "com",
-    port: kind === "printer" ? "192.168.1.100" : "1",
+    /*
+     * ККМ по умолчанию — TCP/IP, а не COM.
+     *
+     * Драйвер АТОЛ (`src-tauri/src/fiscal/atol.rs`) подключается по сети,
+     * и карточка с «COM 1» показывала бы то, чего нет: искать потом причину
+     * молчащей кассы будут в кабеле. Адрес отсюда уезжает в драйвер
+     * (`fiscalConfigure` в `DevicesProvider`), а не лежит для красоты.
+     */
+    portType: kind === "scales" ? "com" : "tcp",
+    port: kind === "printer" ? "192.168.1.100" : "192.168.1.223",
     baudRate: 115200,
     cashRegisterNumber: 1,
     taxSystem: "usn_income",
     defaultVat: "vat20",
+    // По умолчанию фискализируем: касса, заведённая как ККМ, обязана
+    // пробивать чек. Выключать это — осознанное действие техподдержки.
+    fiscalEnabled: true,
     cashDrawer: kind === "kkm",
     blockWhenDrawerOpen: false,
     printDishes: true,
     printOrderNumber: true,
     printVat: true,
-    charsPerLine: 30,
     stoppedAt: null,
     stoppedBy: null,
   };
@@ -172,6 +215,14 @@ interface DevicesValue {
   devices: Device[];
   /** Фискальный регистратор терминала. Он один: чек пробивают на одной ККМ. */
   kkm: Device | undefined;
+  /**
+   * Та же ККМ, но только если она **фискализирует**.
+   *
+   * Расчёт гостя обязан смотреть сюда, а печать — на `kkm`. Касса
+   * с выключенной фискализацией остаётся принтером: марки, логотип
+   * и тестовая лента идут, а чек не пробивается и оплату не блокирует.
+   */
+  fiscalKkm: Device | undefined;
   /** Чем открывать денежный ящик. */
   drawerDevice: Device | undefined;
   save: (device: Device) => void;
@@ -199,15 +250,37 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
     [state.devices],
   );
 
+  const kkm = useMemo(
+    () => devices.find((device) => device.kind === "kkm"),
+    [devices],
+  );
+
+  /*
+   * Адрес из карточки ККМ уезжает в драйвер.
+   *
+   * Иначе поле «порт» на экране оборудования ни на что не влияет: Rust берёт
+   * адрес из своей константы, и кассир, поправивший IP, ищет причину молчащей
+   * кассы в кабеле. Команда идемпотентна — совпавшие настройки Rust отбрасывает,
+   * не пересобирая устройство: пересборка обнулила бы его состояние.
+   */
+  useEffect(() => {
+    if (kkm?.portType !== "tcp") return;
+
+    const [host, port] = splitAddress(kkm.port);
+    void fiscalConfigure(host, port).catch((error: unknown) => {
+      console.error("Драйвер ККТ не перенастроен:", error);
+    });
+  }, [kkm]);
+
   const save = useCallback((device: Device) => {
     dispatch({ type: "save", device });
   }, []);
 
   const value = useMemo<DevicesValue>(() => {
-    const kkm = devices.find((device) => device.kind === "kkm");
     return {
       devices,
       kkm,
+      fiscalKkm: kkm?.fiscalEnabled ? kkm : undefined,
       // Ящик открывает то устройство, у которого он включён: обычно ККМ,
       // но у прилавка это может быть и обычный чековый принтер.
       drawerDevice: devices.find((device) => device.cashDrawer && device.isRunning),
@@ -216,7 +289,7 @@ export function DevicesProvider({ children }: { children: ReactNode }) {
       start: (id) => dispatch({ type: "start", id }),
       stop: (id, by) => dispatch({ type: "stop", id, by }),
     };
-  }, [devices, save]);
+  }, [devices, kkm, save]);
 
   return (
     <DevicesContext.Provider value={value}>{children}</DevicesContext.Provider>

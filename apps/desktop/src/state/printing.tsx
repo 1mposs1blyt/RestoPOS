@@ -14,9 +14,12 @@ import { useMenu } from "./menu";
 import { useOrders } from "./orders";
 import { useStations } from "./stations";
 import { useTables } from "./tables";
-import { printTicket, type TicketLine } from "../lib/printer";
-// import { Command } from "@tauri-apps/api/shell";
-import { Command } from "@tauri-apps/plugin-shell";
+import {
+  ATOL_DRIVER_PORT,
+  printAtolLines,
+  printTicket,
+  type TicketLine,
+} from "../lib/printer";
 
 /**
  * Очередь кухонной печати.
@@ -284,74 +287,23 @@ export function PrintingProvider({ children }: { children: ReactNode }) {
             ? testTicket(output.name)
             : ticketLines(next, ordersState.orders[next.orderId]);
 
-        // Если указан порт АТОЛ (5555), печатаем через бесплатную утилиту драйвера
-        if (output.port === 5555) {
-          // Переводим массив строк lines в формат нефискального чека АТОЛ JSON
-
-          const receiptText = lines.map(line => line.text).join('\n');
-
-          const command = await Command.create("run-powershell", [
-            "-NoProfile",
-            "-ExecutionPolicy", "Bypass",
-            "-Command", `
-    $OutputEncoding = [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
-    
-    try {
-        # Жестко прописываем точный путь к 64-битной DLL, которая 100% есть на вашем ПК
-        $netDll = "C:\\Program Files\\ATOL\\Drivers10\\KKT\\bin\\Atol.Drivers10.Fptr.dll"
-
-        # Загружаем официальную .NET библиотеку АТОЛ
-        Add-Type -Path $netDll -ErrorAction Stop
-
-        # Создаем объект драйвера кассы
-        $fptr = New-Object -TypeName "Atol.Drivers10.Fptr.Fptr"
-
-        # Константы параметров связи АТОЛ (передаем числами, чтобы PowerShell не путал типы)
-        $fptr.setParam(1023, 3)                # LIBFPTR_PARAM_COMM_CONNTYPE = TCP (3)
-        $fptr.setParam(1024, "${output.host}") # LIBFPTR_PARAM_IPADDRESS = IP принтера
-        $fptr.setParam(1025, 5555)              # LIBFPTR_PARAM_IPPORT = Порт 5555
-        
-        # Открываем сетевое соединение с ККТ
-        $fptr.open() | Out-Null
-
-        # Открываем нефискальный документ (сервис-чек / марка кухни)
-        $fptr.setParam(1162, 7)                # LIBFPTR_PARAM_RECEIPT_TYPE = LIBFPTR_RT_NONFISCAL (7)
-        $fptr.openReceipt() | Out-Null
-
-        # Передаем текст чека и даем команду на печать
-        $fptr.setParam(1004, "${receiptText}") # LIBFPTR_PARAM_TEXT = 1004
-        $fptr.printText() | Out-Null
-
-        # Закрываем документ, соединение и полностью освобождаем память
-        $fptr.closeReceipt() | Out-Null
-        $fptr.close() | Out-Null
-        $fptr.destroy()
-
-        Write-Output "SUCCESS"
-    } catch {
-        # Если упадет, выводим чистую читаемую ошибку
-        Write-Output "ERROR: $($_.Exception.Message)"
-        exit 0
-    }
-  `
-          ]);
-
-          const cmdOutput = await command.execute();
-
-          if (cmdOutput.stdout.includes("ERROR:")) {
-            const errorMsg = cmdOutput.stdout.substring(cmdOutput.stdout.indexOf("ERROR:") + 6);
-            throw new Error(`Ошибка АТОЛ: ${errorMsg.trim()}`);
-          }
-
-          if (cmdOutput.code !== 0 || !cmdOutput.stdout.includes("SUCCESS")) {
-            throw new Error(`Ошибка системы: ${cmdOutput.stderr || "Сбой выполнения потока PowerShell"}`);
-          }
-
-          
-          // Если утилита АТОЛ вернула код ошибки, выкидываем её в интерфейс кассы
-          if (cmdOutput.code !== 0) {
-            throw new Error(`Ошибка утилиты АТОЛ: ${cmdOutput.stderr || "неизвестный сбой"}`);
-          }
+        /*
+         * На порту 5555 стоит не сырой принтер, а драйвер АТОЛ: ККТ
+         * печатает и марки тоже, отдельного принтера на точке может
+         * не быть. ESC/POS в сокет туда не уедет.
+         *
+         * Скрипт драйвера собирает Rust (`fiscal/atol.rs`), а не фронт.
+         * Раньше он собирался здесь и уходил через `@tauri-apps/plugin-shell`,
+         * которого в сборке нет, — каждая марка падала с «plugin shell
+         * not found». И подставлялся в него текст без экранирования:
+         * блюдо с апострофом в названии ломало скрипт целиком.
+         */
+        if (output.port === ATOL_DRIVER_PORT) {
+          await printAtolLines(
+            output.host,
+            output.port,
+            lines.map((line) => line.text),
+          );
         } else {
           // Для всех остальных обычных принтеров (XPrinter и т.д.) оставляем родной код
           await printTicket({ host: output.host, port: output.port, lines });

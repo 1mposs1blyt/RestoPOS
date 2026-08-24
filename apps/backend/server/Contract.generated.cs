@@ -186,7 +186,6 @@ public static class Contract
             "kitchen.view",
             "kitchen.item.status",
             "print.reprint",
-            "station.manage",
             "hall.layout.edit",
             "menu.stoplist",
             "menu.edit",
@@ -212,6 +211,7 @@ public static class Contract
         ["support"] = new[]
         {
             "terminal.service",
+            "station.manage",
         },
     };
 

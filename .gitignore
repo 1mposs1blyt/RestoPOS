@@ -62,3 +62,8 @@ pnpm-debug.log*
 *.user
 bin/
 obj/
+
+# автономный агент
+.claude/settings.local.json
+daemon.log
+.stop
