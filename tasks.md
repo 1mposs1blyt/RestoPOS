@@ -22,7 +22,7 @@
       `src-tauri/Cargo.toml`. Проверка: `pnpm verify`, `cargo check --release`,
       в `apps/desktop/src` нет ни одного упоминания `plugin-shell`.
 
-- [ ] Убрать разрешение `shell:allow-execute` и блок `run-powershell`
+- [x] Убрать разрешение `shell:allow-execute` и блок `run-powershell`
       из `src-tauri/capabilities/default.json`. Оно осталось от прежней сборки
       и теперь ни к чему не привязано: выдавать из webview право запускать
       `powershell` с произвольными аргументами незачем. Проверка:
@@ -31,8 +31,8 @@
       **Правки уже сделаны попутно с предыдущей задачей**: без снятого
       разрешения релиз не собирается вовсе («Permission shell:allow-execute
       not found»), так что блок из capabilities убран, абзац в `CLAUDE.md`
-      переписан. Осталась одна непроверенная строка — тестовая печать
-      с экрана оборудования на живой ККТ.
+      переписан. Печать на живой ККТ проверена штатным ignored-тестом
+      `fiscal::atol::live::тестовая_печать` — лента вышла.
 
 ## Интерфейс под iikoFront
 
