@@ -730,12 +730,18 @@ Tauri, а не дублирование. Правило одно: **`main.rs` н
 | релиз | `cargo check --release` | `fiscal_simulate` в `generate_handler!` без `cfg` |
 | набор команд | `grep invoke( apps/desktop/src` против списков в `lib.rs` | команду зарегистрировали в одном списке из двух |
 
-Плагин `tauri_plugin_shell` `lib.rs` не поднимает, и это не упущение: драйвер
-АТОЛ зовёт PowerShell сам, через `std::process::Command`, а фронту исполнение
-команд не нужно. Разрешение `shell:allow-execute` в `capabilities/default.json`
-осталось с прежней сборки и сейчас ни к чему не привязано — выдавать
-из webview право запускать `powershell` с произвольными аргументами незачем,
-эту строку стоит убрать.
+**Плагина shell в сборке нет вовсе — и возвращать его не надо.** Драйвер АТОЛ
+зовёт PowerShell сам, через `std::process::Command` в Rust, а фронту исполнение
+команд не нужно: марки уходят командой `atol_print_lines`. Ни крейта
+`tauri-plugin-shell` в `Cargo.toml`, ни пакета `@tauri-apps/plugin-shell`
+в `package.json`, ни разрешения `shell:allow-execute` в
+`capabilities/default.json` больше нет (убрано 25 августа 2026) — выдавать
+из webview право запускать `powershell` с произвольными аргументами незачем.
+
+Убирать это надо **всё сразу**: разрешения в capabilities проверяются на этапе
+сборки против плагинов из `Cargo.toml`, и один только вынутый крейт роняет
+`cargo check` на «Permission shell:allow-execute not found» — ошибка выглядит
+поломкой capabilities, а причина в зависимости.
 
 ### Эквайринг (`src-tauri/src/acquiring/`)
 
