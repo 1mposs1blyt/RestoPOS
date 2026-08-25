@@ -11,7 +11,9 @@
  *  - элемент, обрезанный ближайшим предком с overflow hidden: до него не
  *    добраться вовсе. Лежащее в прокручиваемой панели нарушением не считается —
  *    кассир его достанет;
- *  - горизонтальная прокрутка внутри экрана.
+ *  - горизонтальная прокрутка там, где сдвинуть содержимое нечем. Панель,
+ *    которую кассир пролистает пальцем (overflow-x auto/scroll), нарушением
+ *    не считается — так живёт таблица отчёта на шесть колонок.
  *
  * Нужен поднятый дев-сервер кассы (pnpm --filter @restopos/desktop dev) и вход
  * по PIN 3333: менеджер есть и в демо-данных, и в сиде БД узла. В гейт
@@ -161,7 +163,11 @@ const measure = () => {
         h: Math.round(r.height * 10) / 10,
         cls: cls.slice(0, 90),
       });
-    if (el.scrollWidth - el.clientWidth > 1)
+    // Горизонтальная прокрутка: нарушение — когда содержимое шире контейнера,
+    // а сдвинуть его нечем. Панель с overflow-x auto/scroll кассир пролистает
+    // пальцем, и таблица отчёта на шесть колонок иначе не помещается вовсе:
+    // ужимать её переносом или прятать колонки хуже, чем прокручивать.
+    if (el.scrollWidth - el.clientWidth > 1 && !["auto", "scroll"].includes(style.overflowX))
       wide.push({ tag, cls: cls.slice(0, 90), scrollW: el.scrollWidth, clientW: el.clientWidth });
     // Элемент считаем потерянным, только если его режет ближайший предок
     // с overflow hidden: то, что лежит в прокручиваемой панели, кассир достанет.
@@ -564,6 +570,104 @@ const flows = {
     ok = (await report(s, "столов нет")) && ok;
     return ok;
   },
+
+  /*
+   * Каталог отчётов. Данные нужны настоящие: пустой отчёт — это одна строка
+   * «Данных за смену нет», по которой о ширине таблицы ничего не известно.
+   * Поэтому поток сам открывает кассовую смену, набирает чек на прилавке,
+   * даёт скидку и платит — только после этого у 011, 036 и 046 есть строки.
+   */
+  reports: async (s) => {
+    // Кассовая смена и заказы переживают перезагрузку: второй проход
+    // по разрешениям иначе начинается с уже открытой смены и чужих чеков.
+    await s.eval(() => {
+      for (const key of Object.keys(localStorage))
+        if (key.startsWith("restopos.")) localStorage.removeItem(key);
+      return true;
+    });
+    await reopen(s);
+
+    // Без открытой кассовой смены «Оплатить» не нажимается вовсе.
+    await s.eval((t) => window.__clickMain(t), "Кассовая смена");
+    await s.eval(() => window.__sleep(500));
+    await s.eval((t) => window.__clickMain(t), "Открыть смену");
+    await s.eval(() => window.__sleep(600));
+    await s.eval((t) => window.__clickMain(t), "← Назад");
+    await s.eval(() => window.__sleep(500));
+
+    await s.eval((t) => window.__clickDev(t), "Прилавок");
+    await s.eval(() => window.__sleep(500));
+    await s.eval((t) => window.__clickMain(t), "Прилавок");
+    await s.eval(() => window.__sleep(600));
+    await s.eval(() => {
+      const tiles = [...document.querySelectorAll("button")].filter((el) =>
+        el.className.includes("h-24"),
+      );
+      if (tiles.length === 0) throw new Error("не нашёл плитку меню");
+      for (const tile of tiles.slice(0, 3)) tile.click();
+      return true;
+    });
+    await s.eval(() => window.__sleep(400));
+    await s.eval((t) => window.__clickMain(t), "К оплате");
+    await s.eval(() => window.__sleep(700));
+
+    // Скидка нужна ради отчёта 036: у него шесть колонок, и это самая широкая
+    // таблица каталога — именно на ней проверяется прокрутка внутри панели.
+    await s.eval((t) => window.__clickMain(t), "Скидка");
+    await s.eval(() => window.__sleep(400));
+    await s.eval(() => {
+      const el = [...document.querySelectorAll("button")].find(
+        (b) =>
+          b.className.includes("min-h-16") &&
+          !b.textContent.includes("подтверждением") &&
+          b.closest(".fixed"),
+      );
+      if (!el) throw new Error("не нашёл скидку без подтверждения");
+      el.click();
+      return true;
+    });
+    await s.eval(() => window.__sleep(500));
+    await s.eval((t) => window.__clickMain(t), "Наличные");
+    await s.eval((t) => window.__clickMain(t), "+1000");
+    await s.eval((t) => window.__clickMain(t), "Оплатить");
+    await s.eval(() => window.__sleep(1200));
+
+    // Возвращаемся в хаб переключателем сверху: с прилавка кнопки «Меню» нет.
+    await s.eval((t) => window.__within(document.querySelector("header"), t), "Меню");
+    await s.eval(() => window.__sleep(500));
+    await s.eval((t) => window.__clickMain(t), "Отчёты");
+    await s.eval(() => window.__sleep(600));
+    let ok = await report(s, "каталог, отчёт не выбран");
+
+    await s.eval((t) => window.__clickMain(t), "Общая выручка по типам оплаты");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "011 выручка по типам оплаты")) && ok;
+
+    // Пустая таблица выглядит для замера так же, как полная, а строк в ней
+    // нет: не нажалось «Оплатить» — и меряется одна надпись «Данных нет».
+    // Проверяем явно, иначе поток зеленеет, ничего не проверив.
+    await s.eval(() => {
+      const rows = document.querySelectorAll("main tbody tr").length;
+      if (rows === 0 || document.querySelector("main tbody td[colspan]"))
+        throw new Error("отчёт 011 пуст — чек не пробился");
+      return true;
+    });
+
+    await s.eval((t) => window.__clickMain(t), "Отчёт по скидкам и надбавкам");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "036 скидки, шесть колонок")) && ok;
+
+    await s.eval((t) => window.__clickMain(t), "Реестр счетов");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "046 реестр счетов")) && ok;
+
+    // Пустая таблица — своё состояние: сторно в этой смене не было.
+    await s.eval((t) => window.__clickMain(t), "Списания блюд");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "034 списаний нет")) && ok;
+    return ok;
+  },
+
 };
 
 await waitPort();

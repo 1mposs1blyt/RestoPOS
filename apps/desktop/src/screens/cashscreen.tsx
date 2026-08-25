@@ -5,6 +5,7 @@ import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
 import { FunctionBar, FunctionKey } from "../components/functionbar";
+import { PanelHead } from "../components/panelhead";
 import { useOrders } from "../state/orders";
 import { useShifts } from "../state/shifts";
 import { cashShiftTotals } from "../lib/cash-totals";
@@ -696,22 +697,6 @@ function OpKey({
     >
       {label}
     </button>
-  );
-}
-
-/** Заголовок панели: одна высота на всех колонках, иначе панели «пляшут». */
-function PanelHead({ label, count }: { label: string; count?: number }) {
-  return (
-    <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4">
-      <span className="truncate text-sm font-bold uppercase tracking-wider text-slate-400">
-        {label}
-      </span>
-      {count !== undefined && (
-        <span className="shrink-0 text-sm tabular-nums text-slate-500">
-          записей: {count}
-        </span>
-      )}
-    </div>
   );
 }
 
