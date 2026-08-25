@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Money, OrderItem, UUID } from "@restopos/shared-types";
+import type { Money, OrderItem, Payment, UUID } from "@restopos/shared-types";
 import { useSession } from "../app/session";
 import { findPaymentType } from "../data/payment-types";
 import { newId } from "../lib/storage";
@@ -140,6 +140,26 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
   // Смотрим на фискализирующую ККМ: касса с выключенной фискализацией
   // остаётся принтером и расчёт не блокирует.
   const isNonFiscal = fiscalKkm === undefined;
+
+  /**
+   * Строки чека по заказу — **одно место на продажу и на возврат**.
+   *
+   * Возврат обязан повторить проданный документ строка в строку: ККТ сверяет
+   * сумму позиций с суммой платежей, и чек возврата, собранный чуть иначе,
+   * отклоняется посреди расчёта с гостем. Пока обе ветки собирали строки
+   * своим вызовом, разойтись они могли на одном забытом аргументе —
+   * ставке НДС или системе налогообложения из карточки ККМ.
+   */
+  const buildReceiptItems = useCallback(
+    (orderId: UUID): FiscalReceiptItem[] =>
+      receiptItems(
+        itemsOfOrder(orderId),
+        orderTotals(orderId).total,
+        kkm?.defaultVat ?? "vat20",
+        findMenuItem,
+      ),
+    [itemsOfOrder, orderTotals, kkm, findMenuItem],
+  );
 
   const pay = useCallback(
     async (orderId: UUID, drafts: PaymentDraft[]): Promise<CheckoutStage> => {
@@ -275,12 +295,7 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
 
           const outcome = await fiscalRegister({
             kind: "sale",
-            items: receiptItems(
-              itemsOfOrder(orderId),
-              orderTotals(orderId).total,
-              kkm?.defaultVat ?? "vat20",
-              findMenuItem,
-            ),
+            items: buildReceiptItems(orderId),
             payments: fiscalPayments(settled),
             taxSystem: kkm?.taxSystem ?? "usn_income",
             cashierName: staff?.fullName ?? "—",
@@ -338,10 +353,8 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       cashShift,
       isNonFiscal,
       staff,
-      itemsOfOrder,
-      orderTotals,
+      buildReceiptItems,
       payOrder,
-      findMenuItem,
     ],
   );
 
@@ -468,16 +481,8 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
 
           const outcome = await fiscalRegister({
             kind: "refund",
-            items: receiptItems(
-              itemsOfOrder(orderId),
-              orderTotals(orderId).total,
-              kkm?.defaultVat ?? "vat20",
-              findMenuItem,
-            ),
-            payments: refundable.map((payment) => ({
-              kind: payment.kind === "cash" ? ("cash" as const) : ("cashless" as const),
-              amount: toMinor(payment.amount),
-            })),
+            items: buildReceiptItems(orderId),
+            payments: fiscalRefundPayments(refundable),
             taxSystem: kkm?.taxSystem ?? "usn_income",
             cashierName: staff?.fullName ?? "—",
             orderNumber: order.number,
@@ -525,11 +530,9 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       cashShift,
       isNonFiscal,
       staff,
-      itemsOfOrder,
-      orderTotals,
+      buildReceiptItems,
       paymentsOfOrder,
       refundPayments,
-      findMenuItem,
     ],
   );
 
@@ -571,8 +574,13 @@ const NO_CASH_SHIFT =
  * Раскладка обязательна: ККТ не примет документ, в котором сумма позиций
  * не сошлась с суммой платежей, а скидка применяется к заказу целиком
  * (`lib/discount.ts`). Сама арифметика — в `lib/receipt-lines.ts` под тестами.
+ *
+ * Экспортируется ради теста (`checkout-receipt.test.ts`): собрать её через
+ * провайдер нельзя — тесты идут в окружении `node`, без рендера, — а путь
+ * этот общий у продажи и возврата, и расхождение в нём стоит отклонённого
+ * документа посреди расчёта с гостем.
  */
-function receiptItems(
+export function receiptItems(
   items: OrderItem[],
   total: Money,
   vat: VatRate,
@@ -584,9 +592,19 @@ function receiptItems(
   findMenuItem: MenuItemLookup,
 ): FiscalReceiptItem[] {
   const sources: ReceiptLineSource[] = items
-    // Сторнированная позиция в чек не идёт: из суммы она выпала,
-    // а в фискальном документе ей взяться неоткуда.
-    .filter((item) => item.status !== "voided")
+    /*
+     * Обе пометки выводят позицию из чека, и ровно по тем же причинам,
+     * по которым она выпала из подытога (`orders.tsx::orderSubtotal`):
+     *
+     * `voided` — блюда не будет, платить не за что;
+     * `split`  — блюдо есть, но деньги за него несут его доли, и строка
+     *            родителя рядом с ними означает блюдо в чеке дважды.
+     *
+     * Сумма строк с итогом сойдётся в любом случае — её выравнивает
+     * `buildReceiptLines`, — поэтому лишний родитель не отклонит документ,
+     * а тихо отожмёт доли и напечатается гостю лишней строкой.
+     */
+    .filter((item) => item.status !== "voided" && item.status !== "split")
     .map((item) => ({
       // Название берём из меню — оно не деньги, и свежее даже лучше.
       name: findMenuItem(item.menuItemId)?.name ?? "Позиция",
@@ -617,7 +635,7 @@ function receiptItems(
  * для него безнал: и карта, и расчёт по счёту. «Без выручки» в чек не идёт
  * вовсе — денег по нему не поступает.
  */
-function fiscalPayments(drafts: PaymentDraft[]): FiscalReceiptPayment[] {
+export function fiscalPayments(drafts: PaymentDraft[]): FiscalReceiptPayment[] {
   return drafts
     .filter(
       (draft) => findPaymentType(draft.paymentTypeId)?.kind !== "no_revenue",
@@ -629,6 +647,26 @@ function fiscalPayments(drafts: PaymentDraft[]): FiscalReceiptPayment[] {
           : ("cashless" as const),
       amount: toMinor(draft.amount),
     }));
+}
+
+/**
+ * Строки оплаты для чека возврата.
+ *
+ * Отличается от продажи источником, а не смыслом: возвращается **записанный**
+ * платёж, у которого род уже снят снимком (`Payment.kind`), и справочник
+ * типов оплаты спрашивать не о чем — тип могли переименовать или удалить.
+ *
+ * «Без выручки» здесь остаётся строкой, в отличие от продажи. Разбирается
+ * это не тут: чек, часть которого оплачена без выручки, не сходится
+ * с суммой позиций уже на продаже (см. `docs/state.md`).
+ */
+export function fiscalRefundPayments(
+  payments: Payment[],
+): FiscalReceiptPayment[] {
+  return payments.map((payment) => ({
+    kind: payment.kind === "cash" ? ("cash" as const) : ("cashless" as const),
+    amount: toMinor(payment.amount),
+  }));
 }
 
 export function useCheckout(): CheckoutValue {
