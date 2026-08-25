@@ -206,6 +206,45 @@ const flows = {
     ok = (await report(s, "скидка и строка оплаты наличными")) && ok;
     return ok;
   },
+
+  cash: async (s) => {
+    // Кассовая смена переживает перезагрузку (localStorage), а мерить надо оба
+    // состояния экрана. Без чистки второй проход по разрешениям начинается
+    // с уже открытой смены и не находит кнопку «Открыть смену».
+    await s.eval(() => {
+      for (const key of Object.keys(localStorage))
+        if (key.startsWith("restopos.")) localStorage.removeItem(key);
+      location.reload();
+      return true;
+    });
+    await s.eval(() => new Promise((r) => setTimeout(r, 1600)));
+    await s.eval(helpers);
+    for (let i = 0; i < 4; i += 1) await s.eval((d) => window.__click(d), "3"); // PIN 3333
+    await s.eval(() => window.__sleep(1500));
+    await s.eval((t) => window.__click(t), "Кассовая смена");
+    await s.eval(() => window.__sleep(500));
+    // Профиль Chrome каждый раз новый, localStorage пуст — смена закрыта,
+    // и первым меряется именно это состояние.
+    let ok = await report(s, "касса, смена закрыта");
+    await s.eval((t) => window.__click(t), "Открыть смену");
+    await s.eval(() => window.__sleep(600));
+    ok = (await report(s, "касса, смена открыта")) && ok;
+    await s.eval((t) => window.__click(t), "Внести деньги");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "диалог внесения")) && ok;
+    // Проводим движение: список движений не должен быть пустым, иначе
+    // строка с суммой и комментарием не измерена вовсе.
+    for (const digit of ["5", "0", "0", "0", "0"])
+      await s.eval((d) => window.__click(d), digit);
+    await s.eval((t) => window.__click(t), "Провести");
+    await s.eval(() => window.__sleep(400));
+    // ККМ в браузере не заведена — X-отчёт отвечает предупреждением,
+    // и полоса сверху сдвигает всё вниз. Меряем и с ней.
+    await s.eval((t) => window.__click(t), "Печать X-отчёта");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "движение проведено, предупреждение сверху")) && ok;
+    return ok;
+  },
 };
 
 await waitPort();

@@ -4,6 +4,7 @@ import { cn } from "@restopos/ui-kit";
 import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
+import { FunctionBar, FunctionKey } from "../components/functionbar";
 import { useOrders } from "../state/orders";
 import { useShifts } from "../state/shifts";
 import { cashShiftTotals } from "../lib/cash-totals";
@@ -28,6 +29,12 @@ import { useDevices } from "../state/devices";
  *
  * Все суммы считает `lib/cash-totals.ts` — чистой функцией под тестами.
  * Здесь только ввод и показ.
+ *
+ * Раскладка — как на экране заказа, прилавке и оплате: плоские панели,
+ * разделённые границей в пиксель, без внешних отступов и скруглений,
+ * функции полосой внизу. Слева свод кассы и свод ККТ (смотреть их порознь
+ * бессмысленно), по центру движения по ящику, справа денежные операции
+ * клавиатурой.
  */
 export function CashScreen() {
   const { can } = useAccess();
@@ -56,9 +63,7 @@ export function CashScreen() {
 
   /** Чем объяснять отказ: «нет ККМ» и «не фискализирует» — разные причины. */
   const nonFiscalReason =
-    kkm === undefined
-      ? "ККМ не заведена"
-      : "у ККМ выключена фискализация";
+    kkm === undefined ? "ККМ не заведена" : "у ККМ выключена фискализация";
 
   /**
    * Состояние смены в самой ККТ. `null` — ещё не спрашивали или не ответила.
@@ -224,33 +229,32 @@ export function CashScreen() {
         onOpen={handleOpenShift}
         onBack={back}
         notice={notice}
+        onHideNotice={() => setNotice(null)}
       />
     );
   }
 
   return (
-    <div className="flex h-full w-full select-none flex-col overflow-hidden">
-      <header className="flex shrink-0 items-baseline gap-6 border-b border-slate-800 bg-slate-900 px-5 py-3">
-        <h1 className="text-lg font-black tracking-wide">
-          Кассовая смена №{cashShift.number}
-        </h1>
-        <span className="text-sm text-slate-500">
-          Открыта {formatDateTime(cashShift.openedAt)}
-        </span>
-        <span className="text-sm text-slate-500">
-          Размен: {formatMoney(cashShift.openingFloat)}
+    <div className="flex h-full w-full select-none flex-col overflow-hidden bg-slate-950">
+      {/* Шапка: чья смена и с каким разменом. Номер крупно справа — его
+          называют при сверке и по нему ищут Z-отчёт; длинную подпись режем,
+          а не переносим, иначе на 1024 шапка уходит на две строки. */}
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-black tracking-wide text-emerald-400">
+            Кассовая смена
+          </h1>
+          <p className="truncate text-xs text-slate-500">
+            Открыта {formatDateTime(cashShift.openedAt)} · размен{" "}
+            {formatMoney(cashShift.openingFloat)}
+          </p>
+        </div>
+        <span className="shrink-0 text-2xl font-black tabular-nums text-slate-600">
+          №{cashShift.number}
         </span>
       </header>
 
-      {notice && (
-        <button
-          type="button"
-          onClick={() => setNotice(null)}
-          className="shrink-0 border-b border-amber-900/60 bg-amber-950/40 px-5 py-3 text-left text-sm text-amber-300"
-        >
-          {notice} · нажмите, чтобы скрыть
-        </button>
-      )}
+      {notice && <Notice text={notice} onHide={() => setNotice(null)} />}
 
       {/*
         Рассинхрон двух смен. Кассир этого сам не увидит: на экране кассы
@@ -258,7 +262,7 @@ export function CashScreen() {
         Поэтому говорим прямо здесь и даём кнопку, а не оставляем догадываться.
       */}
       {needsKktShift && (
-        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-rose-900/60 bg-rose-950/40 px-5 py-3">
+        <div className="flex shrink-0 items-center justify-between gap-4 border-b border-rose-900/60 bg-rose-950/40 px-4 py-2">
           <p className="text-sm text-rose-300">
             <b>Смена в ККТ закрыта</b> — чеки пробиваться не будут. Кассовая
             смена при этом идёт: её открыли, когда ККМ ещё не была заведена.
@@ -267,7 +271,7 @@ export function CashScreen() {
             type="button"
             disabled={busy || !can("shift.open")}
             onClick={handleOpenKktShift}
-            className="min-h-11 shrink-0 rounded-lg bg-rose-600 px-4 text-sm font-bold text-white transition active:scale-95 hover:bg-rose-500 disabled:pointer-events-none disabled:opacity-40"
+            className="min-h-11 shrink-0 bg-rose-600 px-4 text-sm font-bold text-white transition active:scale-95 hover:bg-rose-500 disabled:pointer-events-none disabled:opacity-40"
           >
             Открыть смену в ККТ
           </button>
@@ -275,52 +279,147 @@ export function CashScreen() {
       )}
 
       <div className="flex min-h-0 flex-1">
-        <section className="min-h-0 w-96 shrink-0 overflow-y-auto border-r border-slate-800">
-          <h2 className="px-5 pt-4 text-xs uppercase tracking-wider text-slate-600">
-            Итог по смене
-          </h2>
-          <dl className="divide-y divide-slate-900">
-            {totals?.byPaymentType.map((row) => (
+        {/* Свод кассы и свод ККТ — одной колонкой. Вопрос при сверке всегда
+            один: сходится ли наличность в ящике с тем, что видел фискальный
+            регистратор, — и смотреть эти две таблицы порознь бессмысленно.
+            Колонка прокручивается: на 768 точках вместе они не влезают. */}
+        <section className="flex w-80 shrink-0 flex-col border-r border-slate-800 xl:w-96">
+          <PanelHead label="Итог по смене" />
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <dl className="divide-y divide-slate-900">
+              {totals?.byPaymentType.map((row) => (
+                <SumRow
+                  key={row.paymentTypeId}
+                  label={row.label}
+                  value={formatMoney(row.amount)}
+                />
+              ))}
               <SumRow
-                key={row.paymentTypeId}
-                label={row.label}
-                value={formatMoney(row.amount)}
+                label="Выручка"
+                value={formatMoney(totals?.revenue ?? ZERO_MONEY)}
+                strong
               />
-            ))}
-            <SumRow label="Выручка" value={formatMoney(totals?.revenue ?? ZERO_MONEY)} strong />
-            <SumRow label="Чеков" value={String(totals?.ordersCount ?? 0)} />
-            <SumRow
-              label="Средний чек"
-              value={totals?.averageCheck ? formatMoney(totals.averageCheck) : "—"}
-            />
-            <SumRow label="Внесено" value={formatMoney(totals?.deposits ?? ZERO_MONEY)} />
-            <SumRow label="Изъято" value={formatMoney(totals?.withdrawals ?? ZERO_MONEY)} />
-            <SumRow
-              label="Ожидается в ящике"
-              value={formatMoney(totals?.expectedCash ?? ZERO_MONEY)}
-              strong
-            />
-          </dl>
+              <SumRow label="Чеков" value={String(totals?.ordersCount ?? 0)} />
+              <SumRow
+                label="Средний чек"
+                value={
+                  totals?.averageCheck ? formatMoney(totals.averageCheck) : "—"
+                }
+              />
+              <SumRow
+                label="Внесено"
+                value={formatMoney(totals?.deposits ?? ZERO_MONEY)}
+              />
+              <SumRow
+                label="Изъято"
+                value={formatMoney(totals?.withdrawals ?? ZERO_MONEY)}
+              />
+              <SumRow
+                label="Ожидается в ящике"
+                value={formatMoney(totals?.expectedCash ?? ZERO_MONEY)}
+                strong
+              />
+            </dl>
+
+            {zReport && (
+              <>
+                <PanelHead label={`ККТ · смена №${zReport.shiftNumber}`} />
+                <dl className="divide-y divide-slate-900">
+                  <SumRow label="Чеков" value={String(zReport.receipts)} />
+                  <SumRow
+                    label="Наличными по ККТ"
+                    value={formatMoney(fromMinor(zReport.cashTotal))}
+                  />
+                  <SumRow
+                    label="Безналом по ККТ"
+                    value={formatMoney(fromMinor(zReport.cashlessTotal))}
+                  />
+                  {zReport.refundsTotal > 0 && (
+                    <SumRow
+                      label="Возвраты по ККТ"
+                      value={formatMoney(fromMinor(zReport.refundsTotal))}
+                    />
+                  )}
+                  <SumRow
+                    label="Расхождение с ящиком"
+                    value={formatMoney(
+                      fromMinor(
+                        toMinor(totals?.expectedCash ?? ZERO_MONEY) -
+                          zReport.cashTotal -
+                          toMinor(cashShift.openingFloat),
+                      ),
+                    )}
+                    strong
+                  />
+                </dl>
+              </>
+            )}
+          </div>
         </section>
 
-        <section className="flex min-w-0 flex-1 flex-col">
-          <div className="grid shrink-0 grid-cols-2 gap-3 p-4">
-            <Action
+        {/* Движения по ящику. Занимают всю середину: это единственный список
+            экрана, и именно по нему объясняют недостачу. */}
+        <section className="flex min-w-0 flex-1 flex-col border-r border-slate-800">
+          <PanelHead label="Движения по ящику" count={operations.length} />
+          <ul className="min-h-0 flex-1 divide-y divide-slate-900 overflow-y-auto">
+            {operations.map((operation) => (
+              <li
+                key={operation.id}
+                className="flex items-center gap-3 px-4 py-3"
+              >
+                <span className="w-12 shrink-0 text-xs tabular-nums text-slate-600">
+                  {formatTime(operation.createdAt)}
+                </span>
+                <span className="min-w-0 flex-1 text-sm text-slate-300">
+                  {OPERATION_LABELS[operation.kind]}
+                  {operation.comment && (
+                    <span className="text-slate-600"> · {operation.comment}</span>
+                  )}
+                </span>
+                <span
+                  className={cn(
+                    "shrink-0 text-sm font-bold tabular-nums",
+                    isIncoming(operation.kind)
+                      ? "text-emerald-400"
+                      : "text-rose-400",
+                  )}
+                >
+                  {isIncoming(operation.kind) ? "+" : "−"}
+                  {formatMoney(operation.amount)}
+                </span>
+              </li>
+            ))}
+            {operations.length === 0 && (
+              <li className="px-4 py-8 text-center text-sm text-slate-600">
+                Движений не было
+              </li>
+            )}
+          </ul>
+        </section>
+
+        {/* Денежные операции. Сетка разделена пикселем на тёмной подложке,
+            а не отступами: панель читается цельной клавиатурой, и всё место
+            между клавишами достаётся самой клавише — пальцем промахиваются
+            по зазорам. */}
+        <section className="flex min-h-0 w-80 shrink-0 flex-col">
+          <PanelHead label="Операции" />
+          <div className="grid min-h-0 flex-1 grid-cols-2 grid-rows-2 gap-px overflow-y-auto bg-slate-800">
+            <OpKey
               label="Внести деньги"
               disabled={!can("cash.deposit")}
               onClick={() => setDialog("deposit")}
             />
-            <Action
+            <OpKey
               label="Изъять деньги"
               disabled={!can("cash.withdraw")}
               onClick={() => setDialog("withdrawal")}
             />
-            <Action
+            <OpKey
               label="Инкассация"
               disabled={!can("cash.withdraw")}
               onClick={() => setDialog("collection")}
             />
-            <Action
+            <OpKey
               label="Открыть денежный ящик"
               disabled={!can("cash.drawer")}
               onClick={() => {
@@ -336,108 +435,35 @@ export function CashScreen() {
                   );
                   return;
                 }
-                openCashDrawer(drawerDevice.port, 9100).catch(
-                  (error: unknown) =>
-                    setNotice(
-                      error instanceof Error ? error.message : "Ящик не открылся",
-                    ),
+                openCashDrawer(drawerDevice.port, 9100).catch((error: unknown) =>
+                  setNotice(
+                    error instanceof Error ? error.message : "Ящик не открылся",
+                  ),
                 );
               }}
             />
-            <Action
-              label="Печать X-отчёта"
-              disabled={!can("report.x") || busy}
-              onClick={handleXReport}
-            />
-            <Action
-              label="Закрыть смену (Z-отчёт)"
-              tone="danger"
-              disabled={!can("shift.close") || busy}
-              onClick={handleCloseShift}
-            />
           </div>
-
-          {/* Свод ККТ рядом со сводом кассы. Смотреть их порознь бессмысленно:
-              вопрос всегда один — сходится ли наличность в ящике с тем,
-              что видел фискальный регистратор. */}
-          {zReport && (
-            <dl className="shrink-0 divide-y divide-slate-900 border-t border-slate-800 bg-slate-950/60">
-              <SumRow
-                label={`ККТ, смена №${zReport.shiftNumber} · чеков`}
-                value={String(zReport.receipts)}
-              />
-              <SumRow
-                label="Наличными по ККТ"
-                value={formatMoney(fromMinor(zReport.cashTotal))}
-              />
-              <SumRow
-                label="Безналом по ККТ"
-                value={formatMoney(fromMinor(zReport.cashlessTotal))}
-              />
-              {zReport.refundsTotal > 0 && (
-                <SumRow
-                  label="Возвраты по ККТ"
-                  value={formatMoney(fromMinor(zReport.refundsTotal))}
-                />
-              )}
-              <SumRow
-                label="Расхождение с ящиком"
-                value={formatMoney(
-                  fromMinor(
-                    toMinor(totals?.expectedCash ?? ZERO_MONEY) -
-                      zReport.cashTotal -
-                      toMinor(cashShift.openingFloat),
-                  ),
-                )}
-                strong
-              />
-            </dl>
-          )}
-
-          <h2 className="shrink-0 border-t border-slate-800 px-5 py-3 text-xs uppercase tracking-wider text-slate-600">
-            Движения по ящику
-          </h2>
-          <ul className="min-h-0 flex-1 divide-y divide-slate-900 overflow-y-auto">
-            {operations.map((operation) => (
-              <li key={operation.id} className="flex items-center gap-3 px-5 py-3">
-                <span className="w-20 shrink-0 text-xs text-slate-600">
-                  {formatTime(operation.createdAt)}
-                </span>
-                <span className="flex-1 text-sm text-slate-300">
-                  {OPERATION_LABELS[operation.kind]}
-                  {operation.comment && (
-                    <span className="text-slate-600"> · {operation.comment}</span>
-                  )}
-                </span>
-                <span
-                  className={cn(
-                    "text-sm font-bold tabular-nums",
-                    isIncoming(operation.kind) ? "text-emerald-400" : "text-rose-400",
-                  )}
-                >
-                  {isIncoming(operation.kind) ? "+" : "−"}
-                  {formatMoney(operation.amount)}
-                </span>
-              </li>
-            ))}
-            {operations.length === 0 && (
-              <li className="px-5 py-8 text-center text-sm text-slate-600">
-                Движений не было
-              </li>
-            )}
-          </ul>
         </section>
       </div>
 
-      <footer className="flex shrink-0 border-t border-slate-800 bg-slate-900">
-        <button
-          type="button"
-          onClick={back}
-          className="min-h-16 min-w-32 px-6 text-sm font-bold text-slate-300 transition active:bg-slate-800"
-        >
-          Назад
-        </button>
-      </footer>
+      {/* Полоса функций внизу — та же, что на заказе, прилавке и оплате.
+          Отчёты стоят здесь, а не в сетке операций: движения по ящику делают
+          в течение смены, а отчёты снимают в конце, и смешав их в одной сетке,
+          получаешь Z-отчёт под пальцем там, где метили в инкассацию. */}
+      <FunctionBar>
+        <FunctionKey label="← Назад" onClick={back} />
+        <FunctionKey
+          label="Печать X-отчёта"
+          disabled={!can("report.x") || busy}
+          onClick={handleXReport}
+        />
+        <FunctionKey
+          label="Закрыть смену (Z-отчёт)"
+          tone="danger"
+          disabled={!can("shift.close") || busy}
+          onClick={handleCloseShift}
+        />
+      </FunctionBar>
 
       {dialog && (
         <AmountDialog
@@ -472,6 +498,7 @@ function ClosedShift({
   onOpen,
   onBack,
   notice,
+  onHideNotice,
 }: {
   canOpen: boolean;
   value: string;
@@ -480,53 +507,80 @@ function ClosedShift({
   onBack: () => void;
   /** Почему смена не открылась. Чаще всего — молчащая ККТ. */
   notice: string | null;
+  onHideNotice: () => void;
 }) {
   return (
-    <div className="flex h-full w-full select-none items-center justify-center p-8">
-      <div className="w-96 space-y-4 rounded-2xl border border-slate-800 bg-slate-950/60 p-8 text-center">
-        <h2 className="text-lg font-black text-slate-200">
-          Кассовая смена закрыта
-        </h2>
-        <p className="text-sm text-slate-500">
-          Пока смена не открыта, чек не к чему привязать: у него не будет
-          ни номера смены, ни места в Z-отчёте.
-        </p>
-        {notice && (
-          <p className="rounded-lg bg-amber-950/40 px-3 py-2 text-sm text-amber-300">
-            {notice}
+    <div className="flex h-full w-full select-none flex-col overflow-hidden bg-slate-950">
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-black tracking-wide text-slate-300">
+            Кассовая смена
+          </h1>
+          <p className="truncate text-xs text-slate-500">Закрыта</p>
+        </div>
+        <span className="shrink-0 text-2xl font-black tabular-nums text-slate-700">
+          —
+        </span>
+      </header>
+
+      {notice && <Notice text={notice} onHide={onHideNotice} />}
+
+      <div className="flex min-h-0 flex-1 justify-center overflow-y-auto p-6">
+        <div className="h-fit w-96 border border-slate-800 bg-slate-900">
+          <PanelHead label="Открытие смены" />
+          <p className="border-b border-slate-800 px-4 py-3 text-sm text-slate-500">
+            Пока смена не открыта, чек не к чему привязать: у него не будет
+            ни номера смены, ни места в Z-отчёте.
           </p>
-        )}
-        <label className="block text-left">
-          <span className="text-xs uppercase tracking-wider text-slate-600">
-            Разменный фонд
-          </span>
-          <input
-            inputMode="decimal"
-            value={value}
-            onChange={(event) => onChange(event.target.value)}
-            className="mt-1 min-h-14 w-full rounded-xl border border-slate-700 bg-slate-900 px-4 text-right text-xl tabular-nums text-slate-100"
-          />
-        </label>
-        <button
-          type="button"
+          <label className="block px-4 py-3">
+            <span className="text-xs uppercase tracking-wider text-slate-600">
+              Разменный фонд
+            </span>
+            {/* Поле высотой в клавишу: сумму размена набирают пальцем,
+                а не мышью. */}
+            <input
+              inputMode="decimal"
+              value={value}
+              onChange={(event) => onChange(event.target.value)}
+              className="mt-2 min-h-14 w-full border border-slate-700 bg-slate-950 px-4 text-right text-2xl tabular-nums text-slate-100"
+            />
+          </label>
+          {!canOpen && (
+            <p className="border-t border-slate-800 px-4 py-3 text-xs text-slate-600">
+              Смену открывает кассир
+            </p>
+          )}
+        </div>
+      </div>
+
+      <FunctionBar>
+        <FunctionKey label="← Назад" onClick={onBack} />
+        <FunctionKey
+          label="Открыть смену"
+          tone="accept"
+          span={2}
           disabled={!canOpen}
           onClick={onOpen}
-          className="min-h-14 w-full rounded-xl bg-emerald-600 text-sm font-black text-white transition active:scale-95 disabled:bg-slate-800 disabled:text-slate-600"
-        >
-          Открыть смену
-        </button>
-        {!canOpen && (
-          <p className="text-xs text-slate-600">Смену открывает кассир</p>
-        )}
-        <button
-          type="button"
-          onClick={onBack}
-          className="min-h-11 w-full text-sm text-slate-500"
-        >
-          Назад
-        </button>
-      </div>
+        />
+      </FunctionBar>
     </div>
+  );
+}
+
+/**
+ * Полоса предупреждения. Нажатие скрывает: текст отказа нужен один раз,
+ * а место на 768 точках — всю смену. Высота держится целью касания, потому
+ * что это кнопка, а не абзац.
+ */
+function Notice({ text, onHide }: { text: string; onHide: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onHide}
+      className="min-h-11 shrink-0 border-b border-amber-900/60 bg-amber-950/40 px-4 py-2 text-left text-sm text-amber-300"
+    >
+      {text} · нажмите, чтобы скрыть
+    </button>
   );
 }
 
@@ -561,7 +615,11 @@ function AmountDialog({
             <button
               key={digit}
               type="button"
-              onClick={() => setMinor((prev) => Math.min(prev * 10 + Number(digit), 99_999_999))}
+              onClick={() =>
+                setMinor((prev) =>
+                  Math.min(prev * 10 + Number(digit), 99_999_999),
+                )
+              }
               className="min-h-14 rounded-lg border border-slate-700 bg-slate-800 text-xl font-bold text-slate-200 transition active:bg-slate-700"
             >
               {digit}
@@ -612,31 +670,48 @@ function AmountDialog({
   );
 }
 
-function Action({
+/**
+ * Клавиша денежной операции.
+ *
+ * Плоская и без скруглений — клавиши разделяет пиксельный зазор сетки,
+ * а не воздух вокруг каждой. Высота задаётся `min-h-*`, а не паддингами:
+ * паддинги обнуляются сбросом вне слоя (см. CLAUDE.md), и клавиша молча
+ * схлопывается ниже цели касания.
+ */
+function OpKey({
   label,
   onClick,
   disabled,
-  tone,
 }: {
   label: string;
   onClick: () => void;
   disabled?: boolean;
-  tone?: "danger";
 }) {
   return (
     <button
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className={cn(
-        "min-h-20 rounded-xl border px-4 text-sm font-bold transition active:scale-95 disabled:pointer-events-none disabled:opacity-40",
-        tone === "danger"
-          ? "border-rose-900/60 bg-rose-950/40 text-rose-300"
-          : "border-slate-700 bg-slate-800 text-slate-300",
-      )}
+      className="min-h-20 bg-slate-900 px-3 text-sm font-bold leading-tight text-slate-300 transition hover:bg-slate-800 active:bg-slate-700 disabled:pointer-events-none disabled:opacity-40"
     >
       {label}
     </button>
+  );
+}
+
+/** Заголовок панели: одна высота на всех колонках, иначе панели «пляшут». */
+function PanelHead({ label, count }: { label: string; count?: number }) {
+  return (
+    <div className="flex min-h-12 shrink-0 items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-4">
+      <span className="truncate text-sm font-bold uppercase tracking-wider text-slate-400">
+        {label}
+      </span>
+      {count !== undefined && (
+        <span className="shrink-0 text-sm tabular-nums text-slate-500">
+          записей: {count}
+        </span>
+      )}
+    </div>
   );
 }
 
@@ -650,12 +725,14 @@ function SumRow({
   strong?: boolean;
 }) {
   return (
-    <div className="flex min-h-12 items-center justify-between px-5">
-      <dt className="text-sm text-slate-500">{label}</dt>
+    <div className="flex min-h-12 items-center justify-between gap-3 px-5">
+      <dt className="min-w-0 truncate text-sm text-slate-500">{label}</dt>
       <dd
         className={cn(
-          "tabular-nums",
-          strong ? "text-lg font-black text-emerald-400" : "text-sm text-slate-300",
+          "shrink-0 tabular-nums",
+          strong
+            ? "text-lg font-black text-emerald-400"
+            : "text-sm text-slate-300",
         )}
       >
         {value}

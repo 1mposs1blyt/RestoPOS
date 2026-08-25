@@ -29,8 +29,8 @@ export function FunctionBar({ children }: { children: React.ReactNode }) {
  * в CLAUDE.md).
  *
  * Тон несёт смысл, а не украшает: зелёная завершает действие (отправить
- * на кухню, оплатить), оранжевая ведёт к деньгам. Кассир различает их
- * не читая.
+ * на кухню, оплатить), оранжевая ведёт к деньгам, красная закрывает
+ * необратимое (Z-отчёт смену уже не вернёт). Кассир различает их не читая.
  *
  * `span` расширяет клавишу вдвое. Нужен там, где в полосе главное действие
  * одно: «Оплатить» рядом с «Назад» одинаковой ширины теряется, а промах
@@ -46,7 +46,7 @@ export function FunctionKey({
   label: string;
   onClick: () => void;
   disabled?: boolean;
-  tone?: "plain" | "accept" | "pay";
+  tone?: "plain" | "accept" | "pay" | "danger";
   span?: 1 | 2;
 }) {
   return (
@@ -59,6 +59,8 @@ export function FunctionKey({
         span === 2 ? "flex-[2]" : "flex-1",
         tone === "accept" && "bg-emerald-600 text-white hover:bg-emerald-500",
         tone === "pay" && "bg-orange-500 text-white hover:bg-orange-400",
+        tone === "danger" &&
+          "bg-rose-950/60 text-rose-300 hover:bg-rose-900/60",
         tone === "plain" && "bg-slate-900 text-slate-300 hover:bg-slate-800",
       )}
     >
