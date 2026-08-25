@@ -24,7 +24,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck:front": "pnpm --filter @restopos/shared-types --filter @restopos/api-client --filter @restopos/ui-kit --filter @restopos/desktop --filter @restopos/mobile typecheck",
-    "verify": "pnpm contracts:check && pnpm lint && pnpm typecheck:front && pnpm test && pnpm build:web"
+    "verify": "pnpm contracts:check && pnpm lint && pnpm typecheck:front && pnpm test && pnpm build:web",
+    "verify:rust": "node scripts/verify-rust.mjs"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.6",
