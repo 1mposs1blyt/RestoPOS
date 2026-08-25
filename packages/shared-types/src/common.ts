@@ -1,3 +1,8 @@
+import type {
+  ContractFeatureCode,
+  ContractPlanCode,
+} from "./contract.generated";
+
 /** UUID v4 в строковом виде — первичные ключи всех сущностей. */
 export type UUID = string;
 
@@ -11,23 +16,20 @@ export type ISODateString = string;
  */
 export type Money = string;
 
-export type PlanCode = "start" | "standard" | "pro";
+/**
+ * Тариф организации. Как и права, лестница живёт в `contracts/contract.json`
+ * и генерируется в оба языка: рукописная копия разъезжается на первой правке,
+ * а расхождение здесь — это либо оплаченный модуль, отданный бесплатно, либо
+ * отобранный у клиента оплаченный.
+ */
+export type PlanCode = ContractPlanCode;
 
 /**
  * Булевы модули, привязанные к тарифу (таблица `plan_features`).
  * Числовые ограничения (`maxTerminals`, `maxVenues`) — это quota на Plan,
  * а не feature-flag, и проверяются отдельным механизмом.
  */
-export type FeatureCode =
-  | "warehouse"
-  | "kds"
-  | "delivery"
-  | "reports"
-  | "egais"
-  | "loyalty"
-  | "analytics"
-  | "suppliers"
-  | "multi_venue";
+export type FeatureCode = ContractFeatureCode;
 
 export type SubscriptionStatus = "active" | "past_due" | "canceled";
 

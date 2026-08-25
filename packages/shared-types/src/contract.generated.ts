@@ -280,3 +280,83 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
     "station.manage",
   ],
 };
+
+export type ContractPlanCode =
+  | "start"
+  | "standard"
+  | "pro";
+
+export type ContractFeatureCode =
+  | "warehouse"
+  | "kds"
+  | "delivery"
+  | "reports"
+  | "egais"
+  | "loyalty"
+  | "analytics"
+  | "suppliers"
+  | "multi_venue";
+
+/** Тарифы от дешёвого к дорогому: порядок значим, лестница обязана расти. */
+export const CONTRACT_PLAN_CODES: readonly ContractPlanCode[] = [
+  "start",
+  "standard",
+  "pro",
+];
+
+export const CONTRACT_FEATURE_CODES: readonly ContractFeatureCode[] = [
+  "warehouse",
+  "kds",
+  "delivery",
+  "reports",
+  "egais",
+  "loyalty",
+  "analytics",
+  "suppliers",
+  "multi_venue",
+];
+
+/**
+ * Булевы модули тарифа. Числовые ограничения сюда не входят намеренно
+ * (инвариант №2): они живут в `CONTRACT_PLAN_QUOTAS` и проверяются счётом
+ * текущего использования, а не наличием флага.
+ */
+export const CONTRACT_PLAN_FEATURES: Record<
+  ContractPlanCode,
+  readonly ContractFeatureCode[]
+> = {
+  start: [],
+  standard: [
+    "warehouse",
+    "kds",
+    "delivery",
+    "reports",
+  ],
+  pro: [
+    "warehouse",
+    "kds",
+    "delivery",
+    "reports",
+    "egais",
+    "loyalty",
+    "analytics",
+    "suppliers",
+    "multi_venue",
+  ],
+};
+
+/** Числовые лимиты тарифа: проверяются счётом использования, а не флагом. */
+export interface ContractPlanQuota {
+  maxTerminals: number;
+  maxVenues: number;
+  maxStaff: number;
+}
+
+export const CONTRACT_PLAN_QUOTAS: Record<
+  ContractPlanCode,
+  ContractPlanQuota
+> = {
+  start: { maxTerminals: 2, maxVenues: 1, maxStaff: 3 },
+  standard: { maxTerminals: 5, maxVenues: 3, maxStaff: 25 },
+  pro: { maxTerminals: 50, maxVenues: 50, maxStaff: 1000 },
+};

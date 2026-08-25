@@ -6,7 +6,11 @@ import type {
   UUID,
   Venue,
 } from "@restopos/shared-types";
-import { canApprove, permissionsOf } from "@restopos/shared-types";
+import {
+  CONTRACT_PLAN_FEATURES,
+  canApprove,
+  permissionsOf,
+} from "@restopos/shared-types";
 import { ApiError } from "@restopos/api-client";
 import {
   isNodeConfigured,
@@ -195,22 +199,12 @@ interface NodeSession {
  * Модули тарифа по его коду.
  *
  * Узел отдаёт только код тарифа, без списка фич, поэтому раскрываем его здесь
- * по той же таблице, что и локальный режим. Когда узел начнёт отдавать
- * `entitlements` целиком, это место исчезнет — оно временное и намеренно
- * дублирует `app/entitlements.tsx`, а не притворяется источником истины.
+ * по лестнице из контракта — тому же источнику, из которого её берёт
+ * `app/entitlements.tsx`. Когда узел начнёт отдавать `entitlements` целиком,
+ * это место исчезнет.
  */
 function featuresOfPlan(code: PlanCode): FeatureCode[] {
-  const standard: FeatureCode[] = ["warehouse", "kds", "reports", "delivery"];
-  if (code === "start") return [];
-  if (code === "standard") return standard;
-  return [
-    ...standard,
-    "egais",
-    "loyalty",
-    "analytics",
-    "suppliers",
-    "multi_venue",
-  ];
+  return [...CONTRACT_PLAN_FEATURES[code]];
 }
 
 /**

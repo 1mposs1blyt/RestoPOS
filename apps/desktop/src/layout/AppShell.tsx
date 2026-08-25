@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
-import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types";
+import type { ServiceMode, TerminalKind } from "@restopos/shared-types";
+import { CONTRACT_PLAN_CODES } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
 import { useDevices } from "../state/devices";
@@ -185,7 +186,7 @@ function Chip({ children }: { children: ReactNode }) {
   );
 }
 
-const PLANS: PlanCode[] = ["start", "standard", "pro"];
+const PLANS = CONTRACT_PLAN_CODES;
 const TERMINALS: TerminalKind[] = ["pos", "kds"];
 
 const SERVICE_MODES: ServiceMode[] = ["tables", "counter"];

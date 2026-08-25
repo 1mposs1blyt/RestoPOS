@@ -1,5 +1,5 @@
 import type { FeatureCode, Permission } from "@restopos/shared-types";
-import { permissionsOf } from "@restopos/shared-types";
+import { CONTRACT_FEATURE_CODES, permissionsOf } from "@restopos/shared-types";
 import { describe, expect, it } from "vitest";
 import {
   defaultRouteFor,
@@ -21,17 +21,8 @@ import {
  * шумят; отдельно их закрепляет блок «сопутствующие экраны» ниже.
  */
 
-const ALL_FEATURES: FeatureCode[] = [
-  "kds",
-  "warehouse",
-  "delivery",
-  "reports",
-  "egais",
-  "loyalty",
-  "analytics",
-  "suppliers",
-  "multi_venue",
-];
+/* Все модули контракта: тест про доступ, а не про лестницу тарифов. */
+const ALL_FEATURES = CONTRACT_FEATURE_CODES;
 
 function scope(patch: Partial<AccessScope> = {}): AccessScope {
   return {

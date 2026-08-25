@@ -181,7 +181,7 @@
 
 ## Контракт
 
-- [ ] **Довести генератор тарифов до конца.** Лестница описана в
+- [x] **Довести генератор тарифов до конца.** Лестница описана в
       `contracts/contract.json` и проверяется там строже прав, но в
       сгенерированные файлы **не попадает**, и значения продублированы руками:
       `PlanCode` / `FeatureCode` в `packages/shared-types/src/common.ts`
@@ -200,6 +200,19 @@
 
       Проверка: `pnpm contracts:check` зелёный, `pnpm verify` зелёный,
       в `common.ts` и `entitlements.tsx` не осталось литералов тарифов и фич.
+      Генератор пишет `CONTRACT_PLAN_CODES` / `CONTRACT_FEATURE_CODES` /
+      `CONTRACT_PLAN_FEATURES` / `CONTRACT_PLAN_QUOTAS` в TypeScript и
+      `PlanCodes` / `FeatureCodes` / `PlanFeatures` / `PlanQuotas` плюс
+      `PlanHasFeature` и `QuotasOf` — у узла. Копий на фронте оказалось
+      больше трёх: кроме названных, лестницу дублировали `featuresOfPlan`
+      в `data/session-source.ts`, списки `PLANS` в дев-панели и на сервисном
+      экране и `ALL_FEATURES` в тесте навигации — все берут контракт.
+      `FEATURE_LABELS` из `Partial<Record>` стал полным `Record`: фича,
+      добавленная в контракт и забытая в подписях, теперь роняет сборку.
+      Сид в `schema.sql` не тронут и с контрактом сходится (сверено).
+      `pnpm verify` зелёный, 262 теста; `dotnet build` узла в сторону —
+      0 ошибок, 0 предупреждений (в шапку C# добавлен `#nullable enable`:
+      в файле `*.generated.cs` компилятор гасит nullable-контекст сам).
 
 ## Интерфейс
 

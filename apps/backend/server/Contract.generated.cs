@@ -8,6 +8,11 @@
  * это становится по симптому вида «у менеджера пропал конструктор зала».
  */
 
+// Файл с именем *.generated.cs компилятор считает автогенерируемым и выключает
+// в нём контекст nullable, несмотря на <Nullable>enable</Nullable> в csproj:
+// без этой строки `PlanQuota?` молча теряет смысл, а сборка узла даёт CS8669.
+#nullable enable
+
 namespace server;
 
 public static class Contract
@@ -229,4 +234,74 @@ public static class Contract
     /// </summary>
     public static bool CanApprove(string role, string permission) =>
         Overridable.Contains(permission) && HasPermission(role, permission);
+
+    /// <summary>Тарифы от дешёвого к дорогому: порядок значим, лестница обязана расти.</summary>
+    public static readonly IReadOnlyList<string> PlanCodes = new[]
+    {
+        "start",
+        "standard",
+        "pro",
+    };
+
+    public static readonly IReadOnlyList<string> FeatureCodes = new[]
+    {
+        "warehouse",
+        "kds",
+        "delivery",
+        "reports",
+        "egais",
+        "loyalty",
+        "analytics",
+        "suppliers",
+        "multi_venue",
+    };
+
+    /// <summary>
+    /// Булевы модули тарифа. Числовые ограничения сюда не входят намеренно
+    /// (инвариант №2): они живут в PlanQuotas и проверяются счётом текущего
+    /// использования, а не наличием флага.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> PlanFeatures =
+        new Dictionary<string, IReadOnlyList<string>>
+    {
+        ["start"] = Array.Empty<string>(),
+        ["standard"] = new[]
+        {
+            "warehouse",
+            "kds",
+            "delivery",
+            "reports",
+        },
+        ["pro"] = new[]
+        {
+            "warehouse",
+            "kds",
+            "delivery",
+            "reports",
+            "egais",
+            "loyalty",
+            "analytics",
+            "suppliers",
+            "multi_venue",
+        },
+    };
+
+    /// <summary>Числовые лимиты тарифа: проверяются счётом использования, а не флагом.</summary>
+    public sealed record PlanQuota(int MaxTerminals, int MaxVenues, int MaxStaff);
+
+    public static readonly IReadOnlyDictionary<string, PlanQuota> PlanQuotas =
+        new Dictionary<string, PlanQuota>
+    {
+        ["start"] = new PlanQuota(2, 1, 3),
+        ["standard"] = new PlanQuota(5, 3, 25),
+        ["pro"] = new PlanQuota(50, 50, 1000),
+    };
+
+    /// <summary>Входит ли модуль в тариф. Неизвестный тариф — не входит: отказ решает вызывающий.</summary>
+    public static bool PlanHasFeature(string plan, string feature) =>
+        PlanFeatures.TryGetValue(plan, out var features) && features.Contains(feature);
+
+    /// <summary>Лимиты тарифа. Неизвестный тариф — null, а не исключение: как и у PermissionsOf.</summary>
+    public static PlanQuota? QuotasOf(string plan) =>
+        PlanQuotas.TryGetValue(plan, out var quotas) ? quotas : null;
 }
