@@ -79,12 +79,19 @@ impl FiscalState {
     /// Без ККТ под рукой (машина разработчика, браузерная отладка) эмулятор
     /// включается переменной окружения `RESTOPOS_KKT=emulator`.
     pub fn new() -> Self {
-        let config = Config {
+        Self::with_config(Config {
             kind: std::env::var("RESTOPOS_KKT").unwrap_or_default(),
             ip: KKT_ADDRESS.0.to_string(),
             port: KKT_ADDRESS.1,
-        };
+        })
+    }
 
+    /// Состояние под заданные настройки, без чтения окружения.
+    ///
+    /// Нужно тестам: род устройства они задают прямо, а `RESTOPOS_KKT`
+    /// на ходу не поправить — тесты идут потоками одного процесса,
+    /// и окружение у них общее.
+    fn with_config(config: Config) -> Self {
         Self {
             device: Arc::new(Mutex::new(build_device(
                 &config.kind,
@@ -158,6 +165,20 @@ pub fn fiscal_configure(
     ip: String,
     port: u16,
 ) -> Result<(), String> {
+    configure(&state, kind, ip, port)
+}
+
+/// Тело `fiscal_configure` без обвязки Tauri.
+///
+/// Вынесено, чтобы идемпотентность проверялась тестом, а не держалась одним
+/// комментарием: `tauri::State` в тесте не собрать, а обнулённая перенастройкой
+/// смена видна только на живом стенде — то есть уже посреди расчёта гостя.
+fn configure(
+    state: &FiscalState,
+    kind: Option<String>,
+    ip: String,
+    port: u16,
+) -> Result<(), String> {
     let mut current = state
         .config
         .lock()
@@ -181,7 +202,7 @@ pub fn fiscal_configure(
         return Ok(());
     }
 
-    let mut device = lock(&state)?;
+    let mut device = lock(state)?;
     *device = build_device(&wanted.kind, &wanted.ip, wanted.port);
     *current = wanted;
 
@@ -308,4 +329,96 @@ pub async fn fiscal_print_image(
 ) -> Result<(), String> {
     let mut device = lock(&state)?;
     device.print_image(&path, scale_percent.unwrap_or(100))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Стенд на эмуляторе: род устройства задаётся прямо, без `RESTOPOS_KKT`.
+    fn стенд() -> FiscalState {
+        FiscalState::with_config(Config {
+            kind: "emulator".into(),
+            ip: KKT_ADDRESS.0.to_string(),
+            port: KKT_ADDRESS.1,
+        })
+    }
+
+    fn состояние(state: &FiscalState) -> DeviceStatus {
+        lock(state)
+            .expect("мьютекс цел")
+            .status()
+            .expect("эмулятор отвечает всегда")
+    }
+
+    fn открыть_смену(state: &FiscalState) {
+        lock(state)
+            .expect("мьютекс цел")
+            .open_shift("Мария Дёмина")
+            .expect("эмулятор открывает смену");
+    }
+
+    #[test]
+    fn повтор_с_теми_же_настройками_не_пересобирает_устройство() {
+        // Фронт зовёт перенастройку на каждое изменение списка устройств —
+        // в том числе когда в карточке ККМ поправили название или галку.
+        let state = стенд();
+        открыть_смену(&state);
+
+        configure(&state, None, KKT_ADDRESS.0.into(), KKT_ADDRESS.1).expect("настройки те же");
+
+        let status = состояние(&state);
+        assert!(
+            status.shift_open,
+            "пересборка устройства обнулила бы открытую смену"
+        );
+        assert_eq!(status.shift_number, 1);
+    }
+
+    #[test]
+    fn смена_адреса_пересобирает_устройство() {
+        // Обратная сторона того же: поправленный IP обязан доехать
+        // до драйвера, иначе адрес в карточке ККМ декоративный.
+        let state = стенд();
+        открыть_смену(&state);
+
+        configure(&state, None, "192.168.1.55".into(), KKT_ADDRESS.1).expect("адрес меняется");
+        assert!(
+            !состояние(&state).shift_open,
+            "новое устройство начинает с закрытой сменой"
+        );
+
+        // И новый адрес запомнен: повтор с ним уже ничего не пересобирает.
+        открыть_смену(&state);
+        configure(&state, None, "192.168.1.55".into(), KKT_ADDRESS.1).expect("настройки те же");
+        assert!(состояние(&state).shift_open);
+    }
+
+    #[test]
+    fn смена_порта_пересобирает_устройство() {
+        let state = стенд();
+        открыть_смену(&state);
+
+        configure(&state, None, KKT_ADDRESS.0.into(), 5556).expect("порт меняется");
+        assert!(!состояние(&state).shift_open);
+    }
+
+    #[test]
+    fn род_устройства_с_фронта_не_меняется() {
+        let state = стенд();
+        открыть_смену(&state);
+
+        let ответ = configure(
+            &state,
+            Some("atol".into()),
+            KKT_ADDRESS.0.into(),
+            KKT_ADDRESS.1,
+        );
+
+        assert!(ответ.is_err(), "род устройства задаётся только при запуске");
+        assert!(
+            состояние(&state).shift_open,
+            "отказ не должен трогать устройство"
+        );
+    }
 }
