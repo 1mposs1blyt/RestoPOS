@@ -449,6 +449,121 @@ const flows = {
     ok = (await report(s, "тикетов нет")) && ok;
     return ok;
   },
+
+  /*
+   * Схема зала. Меряется на демо-данных, а не против узла, и по той же
+   * причине, что кухня: с узлом состав зала не правится вовсе (маршрутов
+   * на создание и удаление стола у него нет), и конструктор показывает
+   * другой набор клавиш — а мерить надо оба состояния. Дев-сервер поднимается
+   * отдельный, чтобы не трогать подключённый к узлу:
+   *
+   *   VITE_NODE_URL= pnpm --filter @restopos/desktop dev --port 1425
+   *   APP_URL=http://127.0.0.1:1425/ node tools/measure-screen.mjs hall
+   */
+  hall: async (s) => {
+    await s.eval(() => {
+      for (const key of Object.keys(localStorage))
+        if (key.startsWith("restopos.")) localStorage.removeItem(key);
+
+      /*
+       * Расстановку кладём готовой: через конструктор все столы появляются
+       * в одном углу холста, а проверять надо в том числе крайние — у них
+       * кнопка удаления упирается в границу и раньше уезжала под обрез.
+       * Дубль номера здесь тоже намеренный: он поднимает в шапку полосу
+       * «повторяются номера», и её ширина участвует в замере.
+       */
+      const size = {
+        rectangle: { width: 140, height: 90 },
+        square: { width: 90, height: 90 },
+        circle: { width: 100, height: 100 },
+      };
+      const spots = [
+        ["1", "rectangle", 0.02, 0.03],
+        ["2", "square", 0.99, 0.03],
+        ["3", "circle", 0.99, 0.97],
+        ["4", "rectangle", 0.02, 0.97],
+        ["5", "square", 0.32, 0.4],
+        ["5", "circle", 0.52, 0.66],
+        ["7", "rectangle", 0.72, 0.3],
+        ["8", "square", 0.45, 0.15],
+      ];
+      localStorage.setItem(
+        "restopos.hall.layout",
+        JSON.stringify(
+          spots.map(([label, shape, cx, cy], index) => ({
+            id: `probe-table-${index}`,
+            venueId: "venue-demo",
+            label,
+            shape,
+            cx,
+            cy,
+            ...size[shape],
+          })),
+        ),
+      );
+      return true;
+    });
+    await reopen(s);
+
+    // Режим заведения — залом: без него экрана схемы нет вовсе.
+    await s.eval((t) => window.__clickDev(t), "Зал");
+    await s.eval(() => window.__sleep(400));
+    await s.eval((t) => window.__clickMain(t), "Зал");
+    await s.eval(() => window.__sleep(600));
+    let ok = await report(s, "зал, столы расставлены");
+
+    // Конструктор: у столов появляются поля номера и кнопки удаления,
+    // а в полосе функций — клавиши добавления.
+    await s.eval((t) => window.__clickMain(t), "Конструктор зала");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "конструктор")) && ok;
+
+    await s.eval((t) => window.__clickMain(t), "+ Круглый");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "конструктор, стол добавлен")) && ok;
+
+    await s.eval((t) => window.__clickMain(t), "Сохранить расстановку");
+    await s.eval(() => window.__sleep(400));
+
+    /*
+     * Занятый стол — своё состояние: на карточке появляются сумма, время
+     * и число гостей. Стол это не кнопка, а div на холсте, поэтому кликаем
+     * по разметке, а не по надписи.
+     */
+    await s.eval(() => {
+      const table = document.querySelector(
+        `main [style*="position: absolute"]`,
+      );
+      if (!table) throw new Error("не нашёл стол на холсте");
+      table.click();
+      return true;
+    });
+    await s.eval(() => window.__sleep(700));
+    await s.eval(() => {
+      const tile = [...document.querySelectorAll("button")].find((el) =>
+        el.className.includes("h-24"),
+      );
+      if (!tile) throw new Error("не нашёл плитку меню");
+      tile.click();
+      return true;
+    });
+    await s.eval(() => window.__sleep(400));
+    await s.eval((t) => window.__clickMain(t), "В зал");
+    await s.eval(() => window.__sleep(700));
+    ok = (await report(s, "зал, стол занят")) && ok;
+
+    // Пустой зал: у нового заведения это первое, что видит менеджер.
+    await s.eval(() => {
+      for (const key of Object.keys(localStorage))
+        if (key.startsWith("restopos.")) localStorage.removeItem(key);
+      return true;
+    });
+    await reopen(s);
+    await s.eval((t) => window.__clickMain(t), "Зал");
+    await s.eval(() => window.__sleep(500));
+    ok = (await report(s, "столов нет")) && ok;
+    return ok;
+  },
 };
 
 await waitPort();

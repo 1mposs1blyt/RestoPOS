@@ -1,19 +1,22 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useLayoutEffect, useRef, useState } from "react";
 import type { UUID } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
+import { FunctionBar, FunctionKey } from "../components/functionbar";
 import { useHallOccupancy } from "../state/occupancy";
 import {
   findDuplicateLabels,
   useTables,
   type TableLayout,
-  type TableShape,
   type TablesStatus,
 } from "../state/tables";
 import { formatMoney } from "../lib/money";
 import { formatElapsed, useNow } from "../lib/useNow";
+
+/** Сторона кнопки удаления стола: цель касания, а не украшение угла. */
+const REMOVE_SIZE = 44;
 
 interface DragState {
   tableId: UUID;
@@ -45,7 +48,7 @@ interface DragState {
  * роль и тариф проверяются независимо, здесь важна именно роль.
  */
 export function TableScheme() {
-  const { navigate } = useNavigation();
+  const { navigate, back, canGoBack } = useNavigation();
   const { can } = useAccess();
   const {
     tables,
@@ -168,93 +171,77 @@ export function TableScheme() {
   };
 
   return (
-    <div className="flex h-full w-full flex-col select-none p-4">
-      <div className="z-10 mb-4 flex items-center justify-between rounded-xl border border-slate-700/50 bg-slate-800 p-4 shadow-lg">
-        <div className="flex items-center gap-3">
-          <h2 className="text-lg font-bold tracking-wide">Схема зала</h2>
-          <span className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-400">
-            Столов: {tables.length}
+    /*
+     * Обвязка холста — как на заказе, прилавке, оплате и кухне: плоские панели,
+     * разделённые границей в пиксель, без внешних отступов и скруглений,
+     * функции полосой внизу. Сам холст не тронут: он рисуется 1:1 и хранит
+     * координаты в долях (причина — в комментарии выше), масштабирование
+     * здесь уже пробовали, и оно оказалось хуже.
+     */
+    <div className="flex h-full w-full select-none flex-col overflow-hidden bg-slate-950">
+      {/* Шапка несёт только состояние: что за экран, сколько столов и что
+          с ними не так. Действия ушли вниз, в полосу функций: разложенные
+          по двум углам экрана, они заставляют глаз искать. */}
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-4 py-2">
+        <div className="flex min-w-0 items-center gap-3">
+          <h2 className="shrink-0 text-lg font-black tracking-wide text-emerald-400">
+            Схема зала
+          </h2>
+          <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-500">
+            столов {tables.length}
           </span>
+          {status === "loading" && (
+            <span className="shrink-0 text-sm text-slate-500">загрузка…</span>
+          )}
           {duplicates.size > 0 && (
-            <span className="rounded-md bg-rose-950/70 px-2 py-1 text-xs font-semibold text-rose-300">
+            <span className="bg-rose-950/70 px-2 py-1 text-xs font-semibold text-rose-300">
               Повторяются номера: {[...duplicates].join(", ")}
             </span>
           )}
-          {status === "loading" && (
-            <span className="rounded-md bg-slate-700 px-2 py-1 text-xs text-slate-400">
-              Загрузка…
-            </span>
-          )}
           {error && (
-            <button
-              type="button"
-              onClick={reload}
-              className="min-h-11 rounded-md bg-rose-950/70 px-3 text-xs font-semibold text-rose-300 active:scale-95"
-            >
-              {error} — повторить
-            </button>
+            // Кнопки здесь нет: перечитать зал предлагает полоса функций внизу,
+            // а шапка говорит, что случилось.
+            <span className="truncate bg-rose-950/70 px-2 py-1 text-xs font-semibold text-rose-300">
+              {error}
+            </span>
           )}
           {occupancyError && (
             // Схема при этом остаётся на экране с прошлыми данными: мигающий
             // зал в час пик хуже, чем зал, отставший на десять секунд.
-            <span className="rounded-md bg-amber-950/60 px-2 py-1 text-xs text-amber-300">
+            <span className="shrink-0 bg-amber-950/60 px-2 py-1 text-xs text-amber-300">
               Занятость не обновляется
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          {designMode && canEditStructure && (
-            <div className="flex gap-2 rounded-lg border border-slate-700 bg-slate-950/50 p-1">
-              <ShapeButton shape="rectangle" onAdd={addTable}>
-                + Прямоугольный
-              </ShapeButton>
-              <ShapeButton shape="square" onAdd={addTable}>
-                + Квадратный
-              </ShapeButton>
-              <ShapeButton shape="circle" onAdd={addTable}>
-                + Круглый
-              </ShapeButton>
-            </div>
-          )}
-
+        <div className="flex shrink-0 items-center gap-3">
           {designMode && !canEditStructure && (
             // Узел умеет сохранять только геометрию: маршрутов на создание
             // и удаление стола у него нет. Молча показывать кнопки, после
             // которых зал вернётся прежним, нельзя.
-            <span className="max-w-64 text-xs leading-tight text-slate-500">
+            <span className="max-w-72 text-xs leading-tight text-slate-500">
               Столы двигаются и сохраняются на узле. Добавление и удаление —
               когда узел научится.
             </span>
           )}
-
-          {canEditLayout ? (
-            <button
-              type="button"
-              onClick={() => {
-                setDrag(null);
-                setDesignMode((prev) => !prev);
-              }}
-              className={cn(
-                "min-h-11 rounded-lg px-5 text-sm font-semibold tracking-wide shadow-sm transition active:scale-95",
-                designMode
-                  ? "bg-gradient-to-r from-orange-500 to-amber-500 text-white shadow-orange-500/20"
-                  : "bg-slate-700 text-slate-200 hover:bg-slate-600",
-              )}
-            >
-              {designMode ? "💾 Сохранить расстановку" : "🛠️ Режим конструктора"}
-            </button>
-          ) : (
+          {!canEditLayout && (
             <span className="text-xs text-slate-600">
               Расстановку меняет менеджер
             </span>
           )}
+          {designMode && (
+            // Режим виден и без взгляда на полосу функций: конструктор меняет
+            // смысл каждого касания холста, и перепутать его с залом дорого.
+            <span className="bg-orange-500 px-2 py-1 text-xs font-black uppercase tracking-wide text-white">
+              Конструктор
+            </span>
+          )}
         </div>
-      </div>
+      </header>
 
       <div
         ref={canvasRef}
-        className="relative w-full flex-1 overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950 shadow-inner"
+        className="relative min-h-0 w-full flex-1 overflow-hidden bg-slate-950"
         style={{
           backgroundImage:
             "radial-gradient(circle, #334155 1px, transparent 1px)",
@@ -269,102 +256,122 @@ export function TableScheme() {
           const isDragging = drag?.tableId === table.id;
           const isDuplicate = duplicates.has(table.label);
           const { left, top } = positionOf(table);
+          /*
+           * Кнопка удаления лежит на холсте, а не внутри стола, и это
+           * не косметика. Висящая за углом стола, она вылезала за границу
+           * холста у крайних столов — а холст обрезает вышедшее, и удалить
+           * такой стол было нечем. Заодно стол переставал быть прямоугольником
+           * своего размера: торчащий угол давал ему прокрутку внутри себя.
+           * Здесь кнопка половиной ложится на угол, а положение прижимается
+           * к холсту — как и сам стол.
+           */
+          const remove = {
+            left: clamp(
+              left + table.width - REMOVE_SIZE / 2,
+              0,
+              canvas.width - REMOVE_SIZE,
+            ),
+            top: clamp(top - REMOVE_SIZE / 2, 0, canvas.height - REMOVE_SIZE),
+          };
 
           return (
-            <div
-              key={table.id}
-              onPointerDown={(event) => handlePointerDown(event, table)}
-              onPointerMove={(event) => handlePointerMove(event, table)}
-              onPointerUp={handlePointerUp}
-              onPointerCancel={handlePointerUp}
-              onClick={() => {
-                if (designMode) return;
-                if (isRemote(table.id)) {
-                  setBlockedTable(table.label);
-                  return;
-                }
-                navigate({ name: "order", tableId: table.id });
-              }}
-              style={{
-                position: "absolute",
-                left: `${left}px`,
-                top: `${top}px`,
-                width: `${table.width}px`,
-                height: `${table.height}px`,
-                zIndex: isDragging ? 50 : 10,
-              }}
-              className={cn(
-                "flex touch-none items-center justify-center border-2 font-bold shadow-md transition-colors duration-150",
-                table.shape === "circle" ? "rounded-full" : "rounded-xl",
-                designMode
-                  ? isDuplicate
-                    ? "cursor-grab border-rose-500 bg-rose-500/10 hover:bg-rose-500/20"
-                    : isDragging
-                      ? "cursor-grabbing border-orange-400 bg-orange-500/20 shadow-lg shadow-orange-500/10"
-                      : "cursor-grab border-orange-500/40 bg-orange-500/5 hover:border-orange-400 hover:bg-orange-500/10"
-                  : isBusy
-                    ? "cursor-pointer border-amber-500/60 bg-amber-500/10 hover:border-amber-400 hover:bg-amber-500/20"
-                    : "cursor-pointer border-emerald-500/50 bg-emerald-500/5 hover:border-emerald-400 hover:bg-emerald-500/15",
-              )}
-            >
+            <Fragment key={table.id}>
               <div
+                onPointerDown={(event) => handlePointerDown(event, table)}
+                onPointerMove={(event) => handlePointerMove(event, table)}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                onClick={() => {
+                  if (designMode) return;
+                  if (isRemote(table.id)) {
+                    setBlockedTable(table.label);
+                    return;
+                  }
+                  navigate({ name: "order", tableId: table.id });
+                }}
+                style={{
+                  position: "absolute",
+                  left: `${left}px`,
+                  top: `${top}px`,
+                  width: `${table.width}px`,
+                  height: `${table.height}px`,
+                  zIndex: isDragging ? 50 : 10,
+                }}
                 className={cn(
-                  "flex flex-col items-center leading-tight",
-                  !designMode && "pointer-events-none",
+                  "flex touch-none items-center justify-center border-2 font-bold shadow-md transition-colors duration-150",
+                  table.shape === "circle" ? "rounded-full" : "rounded-xl",
+                  designMode
+                    ? isDuplicate
+                      ? "cursor-grab border-rose-500 bg-rose-500/10 hover:bg-rose-500/20"
+                      : isDragging
+                        ? "cursor-grabbing border-orange-400 bg-orange-500/20 shadow-lg shadow-orange-500/10"
+                        : "cursor-grab border-orange-500/40 bg-orange-500/5 hover:border-orange-400 hover:bg-orange-500/10"
+                    : isBusy
+                      ? "cursor-pointer border-amber-500/60 bg-amber-500/10 hover:border-amber-400 hover:bg-amber-500/20"
+                      : "cursor-pointer border-emerald-500/50 bg-emerald-500/5 hover:border-emerald-400 hover:bg-emerald-500/15",
                 )}
               >
-                <span className="mb-0.5 text-xs font-medium uppercase tracking-wider text-slate-500">
-                  Стол
-                </span>
-                {designMode && canEditStructure ? (
-                  // Номер правится прямо на схеме: иначе развести накопившиеся
-                  // дубли можно только удалив стол вместе с его местом.
-                  <input
-                    value={table.label}
-                    maxLength={4}
-                    onChange={(event) =>
-                      renameTable(table.id, event.target.value.trim())
-                    }
-                    onPointerDown={(event) => event.stopPropagation()}
-                    onClick={(event) => event.stopPropagation()}
-                    aria-label={`Номер стола ${table.label}`}
-                    className={cn(
-                      "w-16 rounded bg-slate-950/60 text-center text-lg font-bold outline-none",
-                      "focus:ring-2 focus:ring-orange-400",
-                      isDuplicate ? "text-rose-300" : "text-orange-400",
-                    )}
-                  />
-                ) : (
-                  <span
-                    className={cn(
-                      "text-lg",
-                      isBusy ? "text-amber-400" : "text-emerald-400",
-                    )}
-                  >
-                    {table.label}
+                <div
+                  className={cn(
+                    "flex flex-col items-center leading-tight",
+                    !designMode && "pointer-events-none",
+                  )}
+                >
+                  <span className="mb-0.5 text-xs font-medium uppercase tracking-wider text-slate-500">
+                    Стол
                   </span>
-                )}
-                {!designMode && occupancy && (
-                  <>
-                    {/* Сумма — только когда источник её действительно знает.
-                        Узел отдаёт 0.00 константой, и «0 ₽» на занятом столе
-                        официант прочтёт как «ничего не заказано». */}
-                    {occupancy.total !== null && (
-                      <span className="mt-1 text-[11px] font-semibold tabular-nums text-slate-300">
-                        {formatMoney(occupancy.total)}
+                  {designMode && canEditStructure ? (
+                    // Номер правится прямо на схеме: иначе развести накопившиеся
+                    // дубли можно только удалив стол вместе с его местом.
+                    <input
+                      value={table.label}
+                      maxLength={4}
+                      onChange={(event) =>
+                        renameTable(table.id, event.target.value.trim())
+                      }
+                      onPointerDown={(event) => event.stopPropagation()}
+                      onClick={(event) => event.stopPropagation()}
+                      aria-label={`Номер стола ${table.label}`}
+                      className={cn(
+                        "min-h-11 w-16 rounded bg-slate-950/60 text-center text-lg font-bold outline-none",
+                        "focus:ring-2 focus:ring-orange-400",
+                        isDuplicate ? "text-rose-300" : "text-orange-400",
+                      )}
+                    />
+                  ) : (
+                    <span
+                      className={cn(
+                        "text-lg",
+                        isBusy ? "text-amber-400" : "text-emerald-400",
+                      )}
+                    >
+                      {table.label}
+                    </span>
+                  )}
+                  {!designMode && occupancy && (
+                    <>
+                      {/* Сумма — только когда источник её действительно знает.
+                          Узел отдаёт 0.00 константой, и «0 ₽» на занятом столе
+                          официант прочтёт как «ничего не заказано». */}
+                      {occupancy.total !== null && (
+                        <span className="mt-1 text-[11px] font-semibold tabular-nums text-slate-300">
+                          {formatMoney(occupancy.total)}
+                        </span>
+                      )}
+                      <span className="text-[10px] tabular-nums text-slate-500">
+                        {formatElapsed(occupancy.createdAt, now)}
                       </span>
-                    )}
-                    <span className="text-[10px] tabular-nums text-slate-500">
-                      {formatElapsed(occupancy.createdAt, now)}
-                    </span>
-                    <span className="text-[10px] tabular-nums text-slate-500">
-                      {occupancy.guestCount} гост
-                      {guestSuffix(occupancy.guestCount)}
-                    </span>
-                  </>
-                )}
+                      <span className="text-[10px] tabular-nums text-slate-500">
+                        {occupancy.guestCount} гост
+                        {guestSuffix(occupancy.guestCount)}
+                      </span>
+                    </>
+                  )}
+                </div>
               </div>
 
+              {/* Кнопка удаления — соседка стола на холсте, а не его часть:
+                  см. расчёт `remove` выше. */}
               {designMode && canEditStructure && (
                 <button
                   type="button"
@@ -372,15 +379,17 @@ export function TableScheme() {
                   // без стола — из зала до него не добраться, а значит его
                   // не закрыть и не оплатить. Сначала закрывают счёт.
                   disabled={Boolean(occupancy)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    removeTable(table.id);
+                  onClick={() => removeTable(table.id)}
+                  style={{
+                    position: "absolute",
+                    left: `${remove.left}px`,
+                    top: `${remove.top}px`,
+                    width: `${REMOVE_SIZE}px`,
+                    height: `${REMOVE_SIZE}px`,
+                    zIndex: 60,
                   }}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  // Цель 44px: удаление стола необратимо, а промах пальцем
-                  // по мелкому крестику стоит дороже, чем занятый угол.
                   className={cn(
-                    "absolute -right-3 -top-3 z-20 flex h-11 w-11 items-center justify-center rounded-full border-2 border-slate-950 text-sm font-black shadow-md",
+                    "flex items-center justify-center rounded-full border-2 border-slate-950 text-sm font-black shadow-md",
                     occupancy
                       ? "cursor-not-allowed bg-slate-700 text-slate-500"
                       : "bg-rose-500 text-white hover:bg-rose-600 active:scale-90",
@@ -391,15 +400,13 @@ export function TableScheme() {
                       : `Удалить стол ${table.label}`
                   }
                   title={
-                    occupancy
-                      ? "Сначала закройте заказ на этом столе"
-                      : undefined
+                    occupancy ? "Сначала закройте заказ на этом столе" : undefined
                   }
                 >
                   ✕
                 </button>
               )}
-            </div>
+            </Fragment>
           );
         })}
 
@@ -410,6 +417,42 @@ export function TableScheme() {
           </div>
         )}
       </div>
+
+      {/* Полоса функций внизу — общий компонент, см. components/functionbar.
+          Набор клавиш зависит от режима: в конструкторе холст принимает столы,
+          и держать кнопки их добавления где-то ещё значит развести действия
+          над одним и тем же по разным углам экрана. */}
+      <FunctionBar>
+        {canGoBack && <FunctionKey label="← Назад" onClick={back} />}
+        {designMode && canEditStructure && (
+          <>
+            <FunctionKey
+              label="+ Прямоугольный"
+              onClick={() => addTable("rectangle")}
+            />
+            <FunctionKey
+              label="+ Квадратный"
+              onClick={() => addTable("square")}
+            />
+            <FunctionKey label="+ Круглый" onClick={() => addTable("circle")} />
+          </>
+        )}
+        <FunctionKey
+          label={status === "loading" ? "Обновляется…" : "Обновить"}
+          disabled={status === "loading"}
+          onClick={reload}
+        />
+        {canEditLayout && (
+          <FunctionKey
+            label={designMode ? "Сохранить расстановку" : "Конструктор зала"}
+            tone={designMode ? "accept" : "plain"}
+            onClick={() => {
+              setDrag(null);
+              setDesignMode((prev) => !prev);
+            }}
+          />
+        )}
+      </FunctionBar>
 
       {blockedTable && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-6">
@@ -472,26 +515,6 @@ function emptyHint(
   return canEditLayout
     ? "На холсте пока нет столов — включите режим конструктора."
     : "Схема зала ещё не настроена.";
-}
-
-function ShapeButton({
-  shape,
-  onAdd,
-  children,
-}: {
-  shape: TableShape;
-  onAdd: (shape: TableShape) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={() => onAdd(shape)}
-      className="min-h-11 rounded-lg bg-slate-800 px-4 text-sm font-medium transition hover:bg-slate-700 active:scale-95"
-    >
-      {children}
-    </button>
-  );
 }
 
 function clamp(value: number, min: number, max: number): number {
