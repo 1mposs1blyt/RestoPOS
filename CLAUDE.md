@@ -222,6 +222,26 @@ cd apps/desktop/src-tauri; cargo test --lib
   код, не трогая чужой запущенный узел**, собирай в сторону —
   `dotnet build apps/backend/server/server.csproj -o <временный каталог>`.
   Так проверено 19 августа 2026: 0 ошибок, 0 предупреждений.
+- **Собранную кассу проверяют через UI Automation, а не по CDP.** Замерщик
+  (`tools/measure-screen.mjs`) ходит в дев-сервер браузером — до `desktop.exe`
+  он не дотягивается, а открыть в нём порт отладчика через
+  `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` нельзя: Tauri задаёт WebView2 свои
+  `additional_browser_args`, и переменная не действует (проверено 26 августа 2026).
+  Зато содержимое webview целиком видно в дереве UIA — вплоть до `className`
+  элемента, — и кнопки нажимаются `InvokePattern`:
+
+  ```powershell
+  Add-Type -AssemblyName UIAutomationClient,UIAutomationTypes
+  $p = Get-Process desktop | Select-Object -First 1
+  $c = New-Object System.Windows.Automation.PropertyCondition(
+        [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $p.Id)
+  $win = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst(
+        [System.Windows.Automation.TreeScope]::Children, $c)
+  ```
+
+  **Первый обход дерева обычно возвращает ноль кнопок** — WebView2 включает
+  доступность по запросу клиента, и содержимое появляется со второго раза.
+  Приняв этот ноль за пустой экран, легко объявить сборку сломанной.
 - **Переводы строк держатся `.gitattributes` (`eol=lf`).** Не убирай: генератор
   контракта пишет LF, а git под Windows отдавал файл с CRLF, и `pnpm
   contracts:check` падал на свежем клоне при совпадающем содержимом. Скрипт
