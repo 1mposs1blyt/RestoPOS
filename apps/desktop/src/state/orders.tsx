@@ -17,6 +17,7 @@ import type {
   TableStatus,
   UUID,
 } from "@restopos/shared-types";
+import { stationIdsWithScreen } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
 import { sumMoney, ZERO_MONEY } from "../lib/money";
 import { lineTotal } from "../lib/order-price";
@@ -208,7 +209,7 @@ export function OrdersProvider({
 }) {
   const { cashShift } = useShifts();
   const [state, dispatch] = useReducer(reducer, undefined, loadOrders);
-  const { stations, hasScreenOf } = useStations();
+  const { outputs } = useStations();
   const { findMenuItem } = useMenu();
 
   /**
@@ -226,11 +227,17 @@ export function OrdersProvider({
     saveState(STORAGE_KEY, state);
   }, [state]);
 
-  /** Станции, где готовность отмечать некому: там только бумага. */
-  const autoReadyStationIds = useMemo(
-    () =>
-      stations.filter((station) => !hasScreenOf(station.id)).map((s) => s.id),
-    [stations, hasScreenOf],
+  /**
+   * Станции с экраном — то есть те, где готовность отмечает человек.
+   *
+   * Считается от выводов, а не от справочника станций: станция позиции
+   * приезжает с меню узла, и её идентификатора в справочнике терминала может
+   * не быть вовсе. Всё, чего нет в этом списке, работает по бумаге и готово
+   * сразу после отправки.
+   */
+  const screenStationIds = useMemo(
+    () => stationIdsWithScreen(outputs),
+    [outputs],
   );
 
   const itemsOfOrder = useCallback(
@@ -464,7 +471,7 @@ export function OrdersProvider({
       setItemStatus: (itemId, status) =>
         dispatch({ type: "item/status", itemId, status }),
       sendToKitchen: (orderId) =>
-        dispatch({ type: "order/send", orderId, stationOf, autoReadyStationIds }),
+        dispatch({ type: "order/send", orderId, stationOf, screenStationIds }),
       payOrder: (orderId, drafts) => {
         // Без открытой кассовой смены чек не к чему привязать: у него не будет
         // ни номера смены, ни места в Z-отчёте. Экран оплаты до этого места
@@ -529,7 +536,7 @@ export function OrdersProvider({
       openOrder,
       addItem,
       stationOf,
-      autoReadyStationIds,
+      screenStationIds,
       cashShift,
       waiterId,
     ],

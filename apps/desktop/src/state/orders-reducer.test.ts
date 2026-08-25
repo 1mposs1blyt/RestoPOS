@@ -187,7 +187,7 @@ describe("отправка на кухню", () => {
       orderId: "order-1",
       stationOf: (menuItemId) =>
         menuItemId === "item-mors" ? BAR : KITCHEN,
-      autoReadyStationIds: [],
+      screenStationIds: [KITCHEN, BAR],
     });
     expect(next.items["item-1"].status).toBe("cooking");
     expect(next.items["item-2"].status).toBe("cooking");
@@ -201,9 +201,26 @@ describe("отправка на кухню", () => {
       orderId: "order-1",
       stationOf: (menuItemId) =>
         menuItemId === "item-mors" ? BAR : KITCHEN,
-      autoReadyStationIds: [BAR],
+      screenStationIds: [KITCHEN],
     });
     expect(next.items["item-1"].status).toBe("cooking");
+    expect(next.items["item-2"].status).toBe("ready");
+  });
+
+  it("считает готовой позицию незнакомой станции", () => {
+    /*
+     * Станция приезжает с меню узла и в справочнике терминала её может
+     * не быть вовсе. Пока авто-готовность считалась от списка «станций
+     * без экрана», такая позиция уходила в `cooking` и висела там навсегда:
+     * экрана у неё нет, отметить готовность некому.
+     */
+    const next = reducer(state, {
+      type: "order/send",
+      orderId: "order-1",
+      stationOf: () => "88888888-8888-8888-8888-888888888881",
+      screenStationIds: [KITCHEN, BAR],
+    });
+    expect(next.items["item-1"].status).toBe("ready");
     expect(next.items["item-2"].status).toBe("ready");
   });
 
@@ -214,7 +231,7 @@ describe("отправка на кухню", () => {
       orderId: "order-1",
       stationOf: (menuItemId) =>
         menuItemId === "item-mors" ? BAR : KITCHEN,
-      autoReadyStationIds: [],
+      screenStationIds: [KITCHEN, BAR],
     });
     const ready = reducer(sent, {
       type: "item/status",
@@ -226,7 +243,7 @@ describe("отправка на кухню", () => {
       orderId: "order-1",
       stationOf: (menuItemId) =>
         menuItemId === "item-mors" ? BAR : KITCHEN,
-      autoReadyStationIds: [],
+      screenStationIds: [KITCHEN, BAR],
     });
     expect(again).toBe(ready);
   });
@@ -239,7 +256,7 @@ describe("отправка на кухню", () => {
         orderId: "order-1",
         stationOf: (menuItemId) =>
         menuItemId === "item-mors" ? BAR : KITCHEN,
-        autoReadyStationIds: [KITCHEN],
+        screenStationIds: [KITCHEN],
       }),
     ).toBe(empty);
   });

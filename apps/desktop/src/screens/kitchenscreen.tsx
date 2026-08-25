@@ -15,6 +15,24 @@ import { formatElapsed, minutesSince, useNow } from "../lib/useNow";
 const LATE_AFTER_MINUTES = 15;
 
 /**
+ * Подпись станции.
+ *
+ * Идентификатор, которого нет в справочнике терминала, — не повод показать
+ * пустоту. Станция приезжает вместе с позицией меню, то есть из БД узла,
+ * а справочник станций у узла пока не спрашивают вовсе, и тикет без имени
+ * читается как поломка кухни, а не как незаведённая станция. Показываем сам
+ * идентификатор, укороченный **с обеих сторон**: у станций одного заведения
+ * совпадает начало (`88888888-8888-…`), и обрезка по ширине колонки сделала бы
+ * кухню и бар неразличимыми.
+ */
+function stationLabel(stationId: UUID, name: string | undefined): string {
+  if (name !== undefined) return name;
+  return stationId.length > 16
+    ? `${stationId.slice(0, 6)}…${stationId.slice(-6)}`
+    : stationId;
+}
+
+/**
  * Монитор кухни (KDS).
  *
  * Читает те же заказы, что и касса: отдельного «кухонного» состояния нет.
@@ -79,6 +97,24 @@ export function KitchenScreen() {
     return counts;
   }, [kitchenTickets]);
 
+  /**
+   * Станции, тикеты которых висят на экране, но которых нет в справочнике.
+   *
+   * Без этой строки в колонке справа такой тикет не посчитан нигде: он виден
+   * только в «Все станции» и выглядит принадлежащим неизвестно кому. Считаем
+   * от тикетов, а не от меню: станция, на которую сейчас ничего не отправлено,
+   * в колонке не нужна.
+   */
+  const unknownStationIds = useMemo(() => {
+    const known = new Set(stations.map((station) => station.id));
+    const seen: UUID[] = [];
+    for (const ticket of kitchenTickets) {
+      if (ticket.stationId === null || known.has(ticket.stationId)) continue;
+      if (!seen.includes(ticket.stationId)) seen.push(ticket.stationId);
+    }
+    return seen;
+  }, [kitchenTickets, stations]);
+
   const lateCount = tickets.filter(
     (ticket) => minutesSince(ticket.order.createdAt, now) >= LATE_AFTER_MINUTES,
   ).length;
@@ -92,7 +128,7 @@ export function KitchenScreen() {
         <h1 className="truncate text-2xl font-black tracking-wide text-emerald-400">
           {stationId === null
             ? "Все станции"
-            : (findStation(stationId)?.name ?? "Монитор кухни")}
+            : stationLabel(stationId, findStation(stationId)?.name)}
         </h1>
         <div className="flex shrink-0 items-baseline gap-4">
           {lateCount > 0 && (
@@ -121,8 +157,11 @@ export function KitchenScreen() {
               <Ticket
                 key={`${order.id}:${ticketStation ?? "-"}`}
                 stationName={
-                  stationId === null
-                    ? (findStation(ticketStation)?.name ?? null)
+                  stationId === null && ticketStation !== null
+                    ? stationLabel(
+                        ticketStation,
+                        findStation(ticketStation)?.name,
+                      )
                     : null
                 }
                 order={order}
@@ -165,6 +204,19 @@ export function KitchenScreen() {
                 onClick={() => setStationId(station.id)}
               >
                 {station.name}
+              </StationKey>
+            ))}
+            {/* Станции с узла, которых нет в справочнике терминала. Место им
+                после заведённых: это не полноценная станция, а идентификатор,
+                под который что-то уехало, — но видеть его надо. */}
+            {unknownStationIds.map((unknownId) => (
+              <StationKey
+                key={unknownId}
+                active={stationId === unknownId}
+                count={countByStation.get(unknownId) ?? 0}
+                onClick={() => setStationId(unknownId)}
+              >
+                {stationLabel(unknownId, undefined)}
               </StationKey>
             ))}
           </div>
