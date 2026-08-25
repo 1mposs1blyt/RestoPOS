@@ -19,6 +19,9 @@
  *
  *   node tools/measure-screen.mjs payment 1024x768,1366x768
  *
+ * Адрес дев-сервера переопределяется `APP_URL` — потоку `kitchen` нужен
+ * сервер без `VITE_NODE_URL` (почему — в комментарии к потоку).
+ *
  * Новый экран — новый поток в flows: дойти до него кликами и позвать report
  * в каждом состоянии, которое стоит померить.
  */
@@ -101,6 +104,33 @@ const helpers = () => {
     await window.__sleep(400);
     return true;
   };
+  /*
+   * Одна и та же надпись живёт на экране, в переключателе экранов сверху
+   * и в дев-панели снизу: «Прилавок» находится трижды, и какой из них
+   * попадётся по номеру — зависит от того, сколько экранов доступно роли.
+   * Поэтому ищем в конкретной области, а не по всей странице.
+   */
+  window.__within = async (root, text, nth = 0) => {
+    if (!root) throw new Error(`нет области для кнопки «${text}»`);
+    const el =
+      [...root.querySelectorAll("button, [role=button], a")].filter((node) =>
+        (node.textContent ?? "").trim().includes(text),
+      )[nth] ?? null;
+    if (!el) throw new Error(`не нашёл кнопку «${text}»`);
+    el.click();
+    await window.__sleep(400);
+    return true;
+  };
+  /** Кнопка самого экрана. */
+  window.__clickMain = (text, nth = 0) =>
+    window.__within(document.querySelector("main"), text, nth);
+  /** Кнопка дев-панели: она последняя в оболочке и в релиз не попадает. */
+  window.__clickDev = (text, nth = 0) =>
+    window.__within(
+      document.querySelector("main")?.parentElement?.lastElementChild,
+      text,
+      nth,
+    );
   return true;
 };
 
@@ -111,6 +141,10 @@ const measure = () => {
   const small = [];
   const wide = [];
   const cut = [];
+  // Текст мельче этого внутри тикета кухни с двух метров не читается
+  // (см. расчёт в шапке `screens/kitchenscreen.tsx`). Тикет опознаётся
+  // по тегу `article`; на других экранах его нет, и проверка молчит.
+  const tiny = [];
   for (const el of root.querySelectorAll("*")) {
     const style = getComputedStyle(el);
     if (style.display === "none" || style.visibility === "hidden") continue;
@@ -144,9 +178,27 @@ const measure = () => {
         (r.right > bound.right + 1 || r.left < bound.left - 1 || r.bottom > bound.bottom + 1))
       cut.push({ tag, cls: cls.slice(0, 90), left: Math.round(r.left), right: Math.round(r.right), bottom: Math.round(r.bottom), box: Math.round(bound.bottom) });
   }
+  for (const el of root.querySelectorAll("article *")) {
+    const style = getComputedStyle(el);
+    if (style.display === "none" || style.visibility === "hidden") continue;
+    // Меряем того, кто несёт текст сам, а не обёртки вокруг него.
+    const owns = [...el.childNodes].some(
+      (node) => node.nodeType === 3 && (node.textContent ?? "").trim() !== "",
+    );
+    if (!owns) continue;
+    const size = Number.parseFloat(style.fontSize);
+    if (size < 24)
+      tiny.push({
+        text: (el.textContent ?? "").trim().slice(0, 24),
+        size,
+        cls: (typeof el.className === "string" ? el.className : "").slice(0, 90),
+      });
+  }
+
   return {
     small,
     wide,
+    tiny,
     cut: cut.slice(0, 10),
     rootW: Math.round(box.width),
     rootScrollW: root.scrollWidth,
@@ -160,9 +212,15 @@ const measure = () => {
 async function report(s, name) {
   await s.eval(helpers);
   const r = await s.eval(measure);
-  const ok = r.small.length === 0 && r.cut.length === 0 && r.wide.length === 0;
+  const ok =
+    r.small.length === 0 &&
+    r.cut.length === 0 &&
+    r.wide.length === 0 &&
+    r.tiny.length === 0;
   console.log(`  [${ok ? "ok" : "!!"}] ${name}: ширина ${r.rootW}, scrollWidth ${r.rootScrollW}`);
   for (const i of r.small) console.log(`      мелкая цель ${i.w}x${i.h} «${i.text}» | ${i.cls}`);
+  for (const i of r.tiny)
+    console.log(`      мелкий кегль в тикете ${i.size}px «${i.text}» | ${i.cls}`);
   for (const i of r.cut) console.log(`      вылезло ${i.tag} x ${i.left}..${i.right}, низ ${i.bottom} при ${i.box} | ${i.cls}`);
   for (const i of r.wide)
     console.log(`      скролл по горизонтали ${i.tag} ${i.scrollW}/${i.clientW} | ${i.cls}`);
@@ -170,11 +228,39 @@ async function report(s, name) {
   return ok;
 }
 
+/**
+ * Открыть приложение заново и войти менеджером.
+ *
+ * Ждём появления клавиатуры PIN, а не фиксированную паузу: на холодном
+ * дев-сервере Vite собирает модули по первому запросу, и полутора секунд
+ * ему не хватает — поток падал на «не нашёл кнопку 3» ровно один раз,
+ * на первом запуске после старта сервера.
+ */
+async function reopen(s) {
+  // Перезагружаем командой отладчика, а не `location.reload()` изнутри
+  // страницы: уходящая страница уносит с собой ответ на сам вызов
+  // («Inspected target navigated or closed»).
+  await s.send("Page.navigate", { url: APP });
+  for (let i = 0; i < 60; i += 1) {
+    await s.eval(() => new Promise((r) => setTimeout(r, 500)));
+    await s.eval(helpers);
+    if (await s.eval(() => window.__find("3") !== null)) break;
+  }
+  for (let i = 0; i < 4; i += 1) await s.eval((d) => window.__click(d), "3"); // PIN 3333
+  await s.eval(() => window.__sleep(1500));
+}
+
 const flows = {
   payment: async (s) => {
     for (let i = 0; i < 4; i += 1) await s.eval((d) => window.__click(d), "3"); // PIN 3333
     await s.eval(() => window.__sleep(1500));
-    await s.eval((t, n) => window.__click(t, n), "Прилавок", 1);
+    // Режим заведения переключаем дев-панелью, экран открываем сверху:
+    // по номеру среди всех кнопок «Прилавок» находится то одна, то две —
+    // зависит от того, подключён ли дев-сервер к узлу (там заведение уже
+    // прилавочное), и поток падал на пустом месте.
+    await s.eval((t) => window.__clickDev(t), "Прилавок");
+    await s.eval(() => window.__sleep(500));
+    await s.eval((t) => window.__clickMain(t), "Прилавок");
     await s.eval(() => window.__sleep(500));
     // Три позиции в чеке, одна с длинным названием — чтобы строки были не пустые.
     await s.eval(() => {
@@ -243,6 +329,124 @@ const flows = {
     await s.eval((t) => window.__click(t), "Печать X-отчёта");
     await s.eval(() => window.__sleep(400));
     ok = (await report(s, "движение проведено, предупреждение сверху")) && ok;
+    return ok;
+  },
+
+  /*
+   * Кухонный монитор. Меряется на **демо-данных**, а не против узла, и это
+   * не лень: у позиций сида узла `prep_station_id` пуст, поэтому все тикеты
+   * приезжают без станции, а тариф узла — `start`, где модуля `kds` нет вовсе
+   * и экран недостижим. Дев-сервер для замера поднимается отдельный, чтобы
+   * не трогать тот, что подключён к узлу:
+   *
+   *   VITE_NODE_URL= pnpm --filter @restopos/desktop dev --port 1425
+   *   APP_URL=http://127.0.0.1:1425/ node tools/measure-screen.mjs kitchen
+   */
+  kitchen: async (s) => {
+    // Чистое начало: заказы переживают перезагрузку, и второй проход
+    // по разрешениям иначе начинается с чужих тикетов.
+    await s.eval(() => {
+      for (const key of Object.keys(localStorage))
+        if (key.startsWith("restopos.")) localStorage.removeItem(key);
+      return true;
+    });
+    await reopen(s);
+
+    // Заказ набираем на прилавке: «К оплате» там делает `fireOrder`, то есть
+    // отправляет позиции на кухню, — больше от кассы ничего не нужно.
+    await s.eval((t) => window.__clickDev(t), "Прилавок");
+    await s.eval(() => window.__sleep(400));
+    await s.eval((t) => window.__clickMain(t), "Прилавок");
+    await s.eval(() => window.__sleep(600));
+
+    // Горячее и напитки: заказ обязан разъехаться на две станции, иначе
+    // ни подпись станции в тикете, ни счётчики в колонке не измерены.
+    await s.eval((t) => window.__clickMain(t), "Горячее");
+    await s.eval(() => window.__sleep(300));
+    await s.eval(() => {
+      const tiles = [...document.querySelectorAll("button")].filter((el) =>
+        el.className.includes("h-24"),
+      );
+      if (tiles.length === 0) throw new Error("не нашёл плитку меню");
+      for (const tile of tiles.slice(0, 3)) tile.click();
+      return true;
+    });
+    await s.eval((t) => window.__clickMain(t), "Напитки");
+    await s.eval(() => window.__sleep(300));
+    await s.eval(() => {
+      const tile = [...document.querySelectorAll("button")].find(
+        (el) => el.className.includes("h-24") && el.textContent.includes("Лимонад"),
+      );
+      if (!tile) throw new Error("не нашёл напиток для бара");
+      tile.click();
+      return true;
+    });
+    await s.eval(() => window.__sleep(300));
+    await s.eval((t) => window.__clickMain(t), "К оплате");
+    await s.eval(() => window.__sleep(700));
+
+    /*
+     * Размножаем отправленный заказ прямо в хранилище. Одним тикетом сетка
+     * не проверяется вовсе, а просроченного через интерфейс не дождаться:
+     * красным тикет становится через пятнадцать минут.
+     */
+    await s.eval(() => {
+      const state = JSON.parse(localStorage.getItem("restopos.orders"));
+      const base = Object.values(state.orders).find(
+        (order) => order.status === "sent_to_kitchen",
+      );
+      if (!base) throw new Error("заказ не ушёл на кухню");
+      const items = Object.values(state.items).filter(
+        (item) => item.orderId === base.id,
+      );
+      [6, 25].forEach((minutes, copy) => {
+        const orderId = `probe-order-${copy}`;
+        state.orders[orderId] = {
+          ...base,
+          id: orderId,
+          number: base.number + copy + 1,
+          createdAt: new Date(Date.now() - minutes * 60_000).toISOString(),
+        };
+        items.forEach((item, k) => {
+          const id = `probe-item-${copy}-${k}`;
+          state.items[id] = { ...item, id, orderId, quantity: k + 1 };
+        });
+      });
+      localStorage.setItem("restopos.orders", JSON.stringify(state));
+      // Тип терминала читается один раз в инициализаторе `useState`,
+      // поэтому дальше обязательно перезагрузка.
+      localStorage.setItem("restopos.terminal.kind", JSON.stringify("kds"));
+      return true;
+    });
+    await reopen(s);
+    await s.eval((t) => window.__clickMain(t), "Кухня");
+    await s.eval(() => window.__sleep(600));
+    let ok = await report(s, "кухня, тикеты двух станций");
+
+    // Отмеченная позиция — своё состояние: перечёркнутая строка и галка.
+    await s.eval(() => {
+      const el = document.querySelector("main article ul button");
+      if (!el) throw new Error("не нашёл строку тикета");
+      el.click();
+      return true;
+    });
+    await s.eval(() => window.__sleep(300));
+    ok = (await report(s, "позиция отмечена готовой")) && ok;
+
+    // Одна станция вместо всех: у тикетов пропадает подпись цеха.
+    await s.eval((t) => window.__clickMain(t), "Бар");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "выбран бар")) && ok;
+
+    // Пустой экран — тоже раскладка, и на кухне он основное состояние.
+    await s.eval(() => {
+      localStorage.removeItem("restopos.orders");
+      return true;
+    });
+    await reopen(s);
+    await s.eval((t) => window.__clickMain(t), "Кухня");
+    await s.eval(() => window.__sleep(400));
+    ok = (await report(s, "тикетов нет")) && ok;
     return ok;
   },
 };
