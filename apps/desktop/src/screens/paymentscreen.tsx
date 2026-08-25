@@ -9,6 +9,7 @@ import { PAYMENT_TYPES, findPaymentType } from "../data/payment-types";
 import { useMenu } from "../state/menu";
 import { useCheckout } from "../state/checkout";
 import { useOrders, type PaymentDraft } from "../state/orders";
+import { FunctionBar, FunctionKey } from "../components/functionbar";
 import { CheckoutOverlay } from "./checkoutoverlay";
 import { useShifts } from "../state/shifts";
 import { useTables } from "../state/tables";
@@ -213,22 +214,32 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
     : "Прилавок";
 
   return (
-    <div className="flex h-full w-full select-none flex-col overflow-hidden">
-      <header className="flex shrink-0 items-baseline gap-6 border-b border-slate-800 bg-slate-900 px-5 py-3">
-        <h1 className="text-lg font-black tracking-wide">
-          Оплата заказа №{order.number}
-        </h1>
-        <span className="text-sm text-slate-500">
-          Открыт {formatTime(order.createdAt)}
+    /*
+     * Раскладка та же, что на экране заказа и прилавке: плоские панели,
+     * разделённые границей в пиксель, без внешних отступов и скруглений,
+     * функции полосой внизу. Слева состав чека, по центру набранные строки
+     * оплаты, справа способы и клавиатура сумм.
+     */
+    <div className="flex h-full w-full select-none flex-col overflow-hidden bg-slate-950">
+      {/* Шапка: что рассчитываем. Номер крупно справа — его называют гостю
+          и по нему ищут чек в журнале; длинные имена режем, а не переносим,
+          иначе на 1024 шапка разъезжается на две строки. */}
+      <header className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-slate-800 bg-slate-900 px-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-black tracking-wide text-emerald-400">
+            Оплата · {tableLabel}
+          </h1>
+          <p className="truncate text-xs text-slate-500">
+            Открыт {formatTime(order.createdAt)} · {staff?.fullName ?? "—"}
+          </p>
+        </div>
+        <span className="shrink-0 text-2xl font-black tabular-nums text-slate-600">
+          №{order.number}
         </span>
-        <span className="text-sm text-slate-500">
-          Официант: {staff?.fullName ?? "—"}
-        </span>
-        <span className="text-sm text-slate-500">Стол: {tableLabel}</span>
       </header>
 
       {!cashShift && (
-        <p className="shrink-0 border-b border-amber-900/60 bg-amber-950/40 px-5 py-3 text-sm text-amber-300">
+        <p className="shrink-0 border-b border-amber-900/60 bg-amber-950/40 px-4 py-3 text-sm text-amber-300">
           Кассовая смена не открыта — чек не к чему привязать. Откройте смену
           на экране кассы.
         </p>
@@ -238,14 +249,24 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
         // Молчать об этом нельзя: закрытый заказ без фискального документа
         // выглядит на экране точно так же, как обычный, а по документам
         // продажи не было.
-        <p className="shrink-0 border-b border-slate-700 bg-slate-800/60 px-5 py-3 text-sm text-slate-400">
+        <p className="shrink-0 border-b border-slate-700 bg-slate-800/60 px-4 py-3 text-sm text-slate-400">
           ККМ не заведена — нефискальный режим. Заказ закроется без чека.
         </p>
       )}
 
       <div className="flex min-h-0 flex-1">
-        {/* Состав чека */}
+        {/* Состав чека. Ширина как у чека на экране заказа: кассир переходит
+            сюда с него, и колонка не должна прыгать под рукой. */}
         <section className="flex w-80 shrink-0 flex-col border-r border-slate-800 bg-slate-950 xl:w-96">
+          <div className="flex min-h-12 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-4">
+            <span className="text-sm font-bold uppercase tracking-wider text-slate-400">
+              Чек
+            </span>
+            <span className="text-sm tabular-nums text-slate-500">
+              позиций: {items.length}
+            </span>
+          </div>
+
           <ul className="min-h-0 flex-1 divide-y divide-slate-900 overflow-y-auto">
             {items.map((item) => {
               const menuItem = findMenuItem(item.menuItemId);
@@ -306,24 +327,12 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
             <SumRow label="Надбавка" value={formatMoney(totals.surcharge)} />
             <SumRow label="Итого" value={formatMoney(totals.total)} strong />
           </dl>
-
-          <div className="shrink-0 border-t border-slate-800 p-3">
-            <button
-              type="button"
-              // Право побиваемое: нет своего — ведём в подтверждение, а не гасим.
-              disabled={!isPossible("order.discount") || lines.length > 0}
-              onClick={() => setDiscountOpen(true)}
-              className="min-h-14 w-full rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition active:bg-slate-700 disabled:opacity-40"
-            >
-              {lines.length > 0 ? "Сначала уберите строки оплаты" : "Скидка / надбавка"}
-            </button>
-          </div>
         </section>
 
         {/* Строки оплаты */}
         <section className="flex min-w-0 flex-1 flex-col border-r border-slate-800">
-          <div className="flex shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-5 py-3">
-            <span className="text-sm uppercase tracking-wider text-slate-500">
+          <div className="flex min-h-12 shrink-0 items-center justify-between border-b border-slate-800 bg-slate-900 px-4">
+            <span className="text-sm font-bold uppercase tracking-wider text-slate-400">
               К оплате
             </span>
             <span className="text-xl font-black tabular-nums text-slate-100">
@@ -386,9 +395,12 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
           </dl>
         </section>
 
-        {/* Типы оплаты и ввод суммы */}
-        <section className="flex w-[26rem] shrink-0 flex-col">
-          <div className="grid shrink-0 grid-cols-2 border-b border-slate-800">
+        {/* Способы оплаты и ввод суммы.
+            Сетки разделены пикселем на тёмной подложке, а не отступами: так
+            панель читается цельной клавиатурой, а всё место между клавишами
+            остаётся самой клавише — пальцем промахиваются по зазорам. */}
+        <section className="flex min-h-0 w-[26rem] shrink-0 flex-col overflow-y-auto">
+          <div className="grid shrink-0 grid-cols-2 gap-px border-b border-slate-800 bg-slate-800">
             {[...PAYMENT_TYPES]
               .sort((a, b) => a.sortOrder - b.sortOrder)
               .map((type) => (
@@ -396,87 +408,102 @@ export function PaymentScreen({ orderId }: { orderId: UUID }) {
                   key={type.id}
                   type="button"
                   onClick={() => addLine(type.id)}
-                  className="min-h-20 border-b border-r border-slate-800 px-3 text-sm font-bold text-slate-300 transition active:bg-slate-700"
+                  className="min-h-14 bg-slate-900 px-3 text-sm font-bold leading-tight text-slate-300 transition hover:bg-slate-800 active:bg-slate-700"
                 >
                   {type.label}
                 </button>
               ))}
           </div>
 
-          <div className="flex min-h-0 flex-1 flex-col p-3">
-            <div className="mb-3 shrink-0 rounded-xl border border-slate-800 bg-slate-950 p-4 text-right">
-              <div className="text-xs uppercase tracking-wider text-slate-600">
-                {activeLabel(lines, activeId)}
-              </div>
-              <div className="text-3xl font-black tabular-nums text-slate-100">
-                {formatMoney(activeAmount(lines, activeId))}
-              </div>
+          {/* Сумма активной строки. Держим её над клавиатурой и крупно:
+              кассир сверяет её с деньгами в руке, не отводя глаз от ящика. */}
+          <div className="shrink-0 border-b border-slate-800 bg-slate-950 px-4 py-2 text-right">
+            <div className="text-xs uppercase tracking-wider text-slate-600">
+              {activeLabel(lines, activeId)}
             </div>
+            <div className="text-3xl font-black tabular-nums text-slate-100">
+              {formatMoney(activeAmount(lines, activeId))}
+            </div>
+          </div>
 
-            <div className="mb-2 grid shrink-0 grid-cols-4 gap-2">
-              {DENOMINATIONS.map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  disabled={activeId === null}
-                  onClick={() => bumpActive(value)}
-                  className="min-h-14 rounded-lg border border-slate-700 bg-slate-800 text-sm font-bold tabular-nums text-slate-300 transition active:bg-slate-700 disabled:opacity-40"
-                >
-                  +{value}
-                </button>
-              ))}
-              <button
-                type="button"
+          <div className="grid shrink-0 grid-cols-4 gap-px border-b border-slate-800 bg-slate-800">
+            {DENOMINATIONS.map((value) => (
+              <NumKey
+                key={value}
                 disabled={activeId === null}
-                onClick={() => setActiveAmount(dueFor(lines.filter((l) => l.id !== activeId)))}
-                className="min-h-14 rounded-lg border border-emerald-800 bg-emerald-950/60 text-xs font-bold text-emerald-300 transition active:bg-emerald-900 disabled:opacity-40"
+                onClick={() => bumpActive(value)}
               >
-                Точная сумма
-              </button>
-            </div>
+                +{value}
+              </NumKey>
+            ))}
+            <NumKey
+              tone="exact"
+              disabled={activeId === null}
+              onClick={() =>
+                setActiveAmount(dueFor(lines.filter((l) => l.id !== activeId)))
+              }
+            >
+              Точная сумма
+            </NumKey>
+          </div>
 
-            <div className="grid flex-1 grid-cols-3 gap-2">
-              {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => (
-                <NumKey
-                  key={digit}
-                  disabled={activeId === null}
-                  onClick={() => pushDigit(digit)}
-                >
-                  {digit}
-                </NumKey>
-              ))}
-              <NumKey disabled={activeId === null} onClick={() => setActiveAmount(ZERO_MONEY)}>
-                C
+          {/* Клавиши держат 56px и не ужимаются: цифры набирают вслепую,
+              а панель, если высоты не хватило (открытые предупреждения
+              сверху, лента 768 точек), прокручивается. Потерять «⌫» ниже
+              края хуже, чем прокрутить: кассир ищет её глазами там,
+              где она была вчера. */}
+          <div className="grid flex-1 grid-cols-3 gap-px bg-slate-800">
+            {["1", "2", "3", "4", "5", "6", "7", "8", "9"].map((digit) => (
+              <NumKey
+                key={digit}
+                tone="digit"
+                disabled={activeId === null}
+                onClick={() => pushDigit(digit)}
+              >
+                {digit}
               </NumKey>
-              <NumKey disabled={activeId === null} onClick={() => pushDigit("0")}>
-                0
-              </NumKey>
-              <NumKey disabled={activeId === null} onClick={dropDigit}>
-                ⌫
-              </NumKey>
-            </div>
+            ))}
+            <NumKey
+              disabled={activeId === null}
+              onClick={() => setActiveAmount(ZERO_MONEY)}
+            >
+              C
+            </NumKey>
+            <NumKey
+              tone="digit"
+              disabled={activeId === null}
+              onClick={() => pushDigit("0")}
+            >
+              0
+            </NumKey>
+            <NumKey disabled={activeId === null} onClick={dropDigit}>
+              ⌫
+            </NumKey>
           </div>
         </section>
       </div>
 
-      <footer className="flex shrink-0 items-stretch border-t border-slate-800 bg-slate-900">
-        <button
-          type="button"
-          onClick={back}
-          className="min-h-16 min-w-32 px-6 text-sm font-bold text-slate-300 transition active:bg-slate-800"
-        >
-          Назад
-        </button>
-        <div className="flex-1" />
-        <button
-          type="button"
+      {/* Полоса функций внизу — та же, что на экране заказа и прилавке.
+          Скидка переехала сюда из чека: действия над расчётом собраны
+          в одном месте, а колонка чека целиком отдана строкам. */}
+      <FunctionBar>
+        <FunctionKey label="← Назад" onClick={back} />
+        <FunctionKey
+          // Право побиваемое: нет своего — ведём в подтверждение, а не гасим.
+          label={
+            lines.length > 0 ? "Сначала уберите строки" : "Скидка / надбавка"
+          }
+          disabled={!isPossible("order.discount") || lines.length > 0}
+          onClick={() => setDiscountOpen(true)}
+        />
+        <FunctionKey
+          label={isBusy ? "Идёт расчёт…" : "Оплатить"}
+          tone="accept"
+          span={2}
           disabled={!isSettled || !cashShift || isBusy}
           onClick={handlePay}
-          className="min-h-16 min-w-64 bg-emerald-600 px-8 text-lg font-black tracking-wide text-white transition active:bg-emerald-500 disabled:bg-slate-800 disabled:text-slate-600"
-        >
-          {isBusy ? "Идёт расчёт…" : "Оплатить"}
-        </button>
-      </footer>
+        />
+      </FunctionBar>
 
       {isDiscountOpen && (
         <DiscountDialog
@@ -548,13 +575,28 @@ function DiscountDialog({
   );
 }
 
+/**
+ * Клавиша ввода суммы: номинал, цифра или «точная сумма».
+ *
+ * Плоская и без скруглений — клавиши разделяет пиксельный зазор сетки,
+ * а не воздух вокруг каждой. Высота задаётся `min-h-*`, а не паддингами:
+ * паддинги обнуляются сбросом вне слоя (см. CLAUDE.md), и клавиша молча
+ * схлопывается ниже цели касания.
+ *
+ * Цифры выше номиналов (56 против 48): по ним бьют вслепую и чаще всего,
+ * а на 1024x768 колонка целиком в высоту не влезает, и лишние восемь
+ * пикселей на каждом ряду номиналов — это ряд цифр, ушедший под прокрутку.
+ * Ниже 44 не опускаемся нигде.
+ */
 function NumKey({
   onClick,
   disabled,
+  tone = "plain",
   children,
 }: {
   onClick: () => void;
   disabled?: boolean;
+  tone?: "plain" | "digit" | "exact";
   children: React.ReactNode;
 }) {
   return (
@@ -562,7 +604,12 @@ function NumKey({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="min-h-14 rounded-lg border border-slate-700 bg-slate-800 text-xl font-bold text-slate-200 transition active:bg-slate-700 disabled:opacity-40"
+      className={cn(
+        "px-1 text-sm font-bold leading-tight tabular-nums transition active:bg-slate-700 disabled:opacity-40",
+        tone === "digit" && "min-h-14 bg-slate-900 text-xl text-slate-100",
+        tone === "exact" && "min-h-12 bg-emerald-950/60 text-emerald-300",
+        tone === "plain" && "min-h-12 bg-slate-900 text-slate-300",
+      )}
     >
       {children}
     </button>

@@ -14,6 +14,7 @@ import { useOrders } from "../state/orders";
 import { usePrinting } from "../state/printing";
 import { useStopList } from "../state/stoplist";
 import { useMenu } from "../state/menu";
+import { FunctionBar, FunctionKey } from "../components/functionbar";
 import { MenuNotice } from "./menunotice";
 import { formatMoney } from "../lib/money";
 import { lineTotal } from "../lib/order-price";
@@ -180,21 +181,20 @@ export function CounterScreen() {
             ))}
           </div>
 
-          {/* Полоса функций. Действия над заказом собраны в одном месте
-              и не разъезжаются по экрану — как в iikoFront. */}
-          <div className="flex shrink-0 gap-px border-t border-slate-800 bg-slate-800">
-            <CounterKey
+          {/* Полоса функций внизу — общий компонент, см. components/functionbar. */}
+          <FunctionBar>
+            <FunctionKey
               label="Сброс"
               disabled={items.length === 0}
               onClick={handleReset}
             />
-            <CounterKey
+            <FunctionKey
               label={can("payment.accept") ? "К оплате" : "Оплату принимает кассир"}
               tone="pay"
               disabled={items.length === 0 || !can("payment.accept")}
               onClick={goToPayment}
             />
-          </div>
+          </FunctionBar>
         </div>
 
         {/* Категории колонкой: строкой сверху они переносились на две
@@ -559,42 +559,5 @@ function CounterLine({
         </button>
       </div>
     </div>
-  );
-}
-
-/**
- * Клавиша нижней панели прилавка.
- *
- * Та же, что на экране заказа (`orderscreen.tsx`): высота 64px вместо
- * минимальных 44, потому что это самые нажимаемые кнопки смены, и в запару
- * по ним попадают боковым зрением. Высота задаётся `min-h-16`, а не
- * вертикальными паддингами: паддинги обнуляются сбросом вне слоя, и кнопка
- * молча схлопывается.
- */
-function CounterKey({
-  label,
-  onClick,
-  disabled = false,
-  tone = "plain",
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  tone?: "plain" | "pay";
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "min-h-16 flex-1 px-2 text-sm font-black uppercase leading-tight tracking-wide transition active:scale-95 disabled:pointer-events-none disabled:opacity-40",
-        tone === "pay"
-          ? "bg-orange-500 text-white hover:bg-orange-400"
-          : "bg-slate-900 text-slate-300 hover:bg-slate-800",
-      )}
-    >
-      {label}
-    </button>
   );
 }

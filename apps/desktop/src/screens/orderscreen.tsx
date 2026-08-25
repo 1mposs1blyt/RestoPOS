@@ -12,6 +12,7 @@ import { useMenu } from "../state/menu";
 import { MenuNotice } from "./menunotice";
 import { formatMoney } from "../lib/money";
 import { lineTotal, unitPrice } from "../lib/order-price";
+import { FunctionBar, FunctionKey } from "../components/functionbar";
 import { SplitDialog } from "../components/splitdialog";
 
 /**
@@ -284,15 +285,12 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
             ))}
           </div>
 
-          {/* Панель функций внизу, как в iikoFront: действия над заказом
-              собраны в одном месте и не разъезжаются по экрану. Разделители
-              в один пиксель дают полосе вид цельной клавиатуры, а не набора
-              раскиданных кнопок. */}
-          <div className="flex shrink-0 gap-px border-t border-slate-800 bg-slate-800">
+          {/* Полоса функций внизу — общий компонент, см. components/functionbar. */}
+          <FunctionBar>
             <FunctionKey label="← В зал" onClick={back} />
             <FunctionKey
               label={canSend ? "Отправить на кухню" : "Всё отправлено"}
-              tone="send"
+              tone="accept"
               disabled={!canSend}
               onClick={() => fireOrder(order.id)}
             />
@@ -302,7 +300,7 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
               disabled={items.length === 0 || !canPay}
               onClick={goToPayment}
             />
-          </div>
+          </FunctionBar>
         </div>
 
         {/* Категории колонкой справа. Строкой сверху они переносились на две
@@ -595,45 +593,6 @@ function QuantityButton({
       className="h-11 w-11 rounded-lg bg-slate-800 text-lg font-bold text-slate-300 transition hover:bg-slate-700 active:scale-90"
     >
       {children}
-    </button>
-  );
-}
-
-/**
- * Клавиша нижней панели функций.
- *
- * Высота 64px, а не минимальные 44: это самые нажимаемые кнопки экрана,
- * и в запару по ним попадают не глядя, боковым зрением. Задаётся `min-h-16`,
- * а не вертикальными паддингами, — паддинги обнуляются сбросом вне слоя,
- * и кнопка молча схлопывается (см. ловушки вёрстки в CLAUDE.md).
- *
- * Тон несёт смысл, а не украшает: зелёная отправляет на кухню, оранжевая
- * ведёт к деньгам. Кассир различает их не читая.
- */
-function FunctionKey({
-  label,
-  onClick,
-  disabled = false,
-  tone = "plain",
-}: {
-  label: string;
-  onClick: () => void;
-  disabled?: boolean;
-  tone?: "plain" | "send" | "pay";
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className={cn(
-        "min-h-16 flex-1 px-2 text-sm font-black uppercase leading-tight tracking-wide transition active:scale-95 disabled:pointer-events-none disabled:opacity-40",
-        tone === "send" && "bg-emerald-600 text-white hover:bg-emerald-500",
-        tone === "pay" && "bg-orange-500 text-white hover:bg-orange-400",
-        tone === "plain" && "bg-slate-900 text-slate-300 hover:bg-slate-800",
-      )}
-    >
-      {label}
     </button>
   );
 }
