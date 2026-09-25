@@ -1,0 +1,29 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    /* `baseUrl` в tsconfig.base.json объявлен устаревшим в TypeScript 6 и без
+       этой строки роняет проверку ошибкой TS5101. Убрать его из базы нельзя:
+       на нём держатся path-алиасы @restopos/* у старой кассы и пакетов. */
+    "ignoreDeprecations": "6.0",
+    "noEmit": true,
+
+    /* Нужно Vite: import.meta.env и типы импортируемых ассетов (.svg и прочее). */
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+
+    /* Bundler mode */
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force"
+
+    /* Чего здесь сознательно НЕТ, хотя create-vite это кладёт:
+       - "composite": true — пакеты @restopos/* резолвятся в свои исходники
+         (exports → src/index.ts), то есть в файлы за пределами "include".
+         Composite-проект обязан перечислять все файлы программы и падает
+         на них пачкой TS6307;
+       - "erasableSyntaxOnly": true — в packages/api-client конструктор
+         NodeApi объявлен параметром-свойством (TS1294). Пакет чужой,
+         править его нельзя, значит флаг снимаем здесь. */
+  },
+  "include": ["src"]
+}
