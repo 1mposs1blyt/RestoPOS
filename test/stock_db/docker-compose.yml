@@ -1,0 +1,18 @@
+services:
+  stock-db:
+    image: postgres:16
+    container_name: stock-db
+    environment:
+      POSTGRES_DB: stock
+      POSTGRES_USER: stock
+      POSTGRES_PASSWORD: stock_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      # скрипты отсюда Postgres выполнит сам при ПЕРВОМ запуске, по алфавиту
+      - ./01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      - stock-data:/var/lib/postgresql/data
+
+volumes:
+  stock-data:

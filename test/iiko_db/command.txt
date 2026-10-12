@@ -1,0 +1,4 @@
+docker compose up -d --build
+
+docker exec -it iiko-ref /opt/mssql-tools18/bin/sqlcmd \
+  -S localhost -U sa -P 'Ref_Passw0rd!' -C -i /schema/resto_schema.sql

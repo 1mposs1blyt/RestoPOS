@@ -62,11 +62,15 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 2,
           "Children": [
             {
               "$type": "Bookmark",
               "Name": "ST:128:0:{75188d03-9892-4ae2-abf1-207126247ce5}"
+            },
+            {
+              "$type": "Bookmark",
+              "Name": "ST:0:0:{1c4feeaa-4718-4aa9-859d-94ce25d182ba}"
             },
             {
               "$type": "Document",
@@ -86,8 +90,8 @@
               "Title": "schema.sql ",
               "DocumentMoniker": "D:\\RestoPOS\\apps\\backend\\server\\Data\\schema.sql",
               "RelativeDocumentMoniker": "Data\\schema.sql",
-              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Data\\schema.sql*",
-              "RelativeToolTip": "Data\\schema.sql*",
+              "ToolTip": "D:\\RestoPOS\\apps\\backend\\server\\Data\\schema.sql",
+              "RelativeToolTip": "Data\\schema.sql",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000826|",
               "WhenOpened": "2026-08-18T12:41:05.918Z",
               "EditorCaption": ""

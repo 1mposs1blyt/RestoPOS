@@ -1,0 +1,11 @@
+services:
+  iiko-ref:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: iiko-ref
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Ref_Passw0rd!"
+    ports:
+      - "14330:1433"
+    volumes:
+      - ./resto_schema.sql:/schema/resto_schema.sql:ro
