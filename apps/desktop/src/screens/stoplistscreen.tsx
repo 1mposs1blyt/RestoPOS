@@ -1,9 +1,11 @@
 import { useState } from "react";
+import type { UUID } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { useAccess } from "../app/access";
 import { useNavigation } from "../app/navigation";
 import { findStaff } from "../data/session-source";
-import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
+import { useMenu } from "../state/menu";
+import { MenuNotice } from "./menunotice";
 import { useStopList } from "../state/stoplist";
 import { formatMoney } from "../lib/money";
 
@@ -21,7 +23,21 @@ export function StopListScreen() {
   const { can } = useAccess();
   const { back } = useNavigation();
   const { entries, entryOf, put, remove, clear } = useStopList();
-  const [categoryId, setCategoryId] = useState(() => MENU_CATEGORIES[0].id);
+  const {
+    categories,
+    findMenuItem,
+    itemsOfCategory,
+    status: menuStatus,
+  } = useMenu();
+
+  // Категория выбирается лениво: меню приезжает с узла и на первом рендере
+  // ещё пусто. `null` — «ни одна не выбрана», а не «первая».
+  const [pickedCategoryId, setPickedCategoryId] = useState<UUID | null>(null);
+  // Пропавшая из меню категория не должна оставаться выбранной — см. `orderscreen`.
+  const categoryId =
+    categories.find((category) => category.id === pickedCategoryId)?.id ??
+    categories[0]?.id ??
+    null;
 
   const canEdit = can("menu.stoplist");
 
@@ -98,11 +114,11 @@ export function StopListScreen() {
 
         <section className="flex min-h-0 w-[28rem] shrink-0 flex-col">
           <div className="flex shrink-0 flex-wrap gap-2 border-b border-slate-800 p-3">
-            {MENU_CATEGORIES.map((category) => (
+            {categories.map((category) => (
               <button
                 key={category.id}
                 type="button"
-                onClick={() => setCategoryId(category.id)}
+                onClick={() => setPickedCategoryId(category.id)}
                 className={cn(
                   "min-h-11 rounded-lg border px-3 text-xs font-bold transition active:scale-95",
                   categoryId === category.id
@@ -116,8 +132,10 @@ export function StopListScreen() {
           </div>
 
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
+            {menuStatus === "ready" ? null : <MenuNotice />}
+
             <div className="grid grid-cols-2 gap-2">
-              {menuItemsOfCategory(categoryId).map((menuItem) => {
+              {(categoryId ? itemsOfCategory(categoryId) : []).map((menuItem) => {
                 const entry = entryOf(menuItem.id);
                 return (
                   <button

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import type { PlanCode, ServiceMode, TerminalKind } from "@restopos/shared-types";
+import type { ServiceMode, TerminalKind } from "@restopos/shared-types";
+import { CONTRACT_PLAN_CODES } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { PLAN_LABELS, useEntitlements } from "../app/entitlements";
 import { useSession } from "../app/session";
@@ -139,7 +140,7 @@ const SERVICE_MODE_LABELS: Record<ServiceMode, string> = {
   counter: "Прилавок",
 };
 
-const PLANS: PlanCode[] = ["start", "standard", "pro"];
+const PLANS = CONTRACT_PLAN_CODES;
 
 /**
  * Разрешение экрана и точки касания.
@@ -264,7 +265,8 @@ function Choice<T extends string>({
   labels,
   onChange,
 }: {
-  options: T[];
+  /** `readonly`: списки кодов приезжают из контракта, менять их некому. */
+  options: readonly T[];
   value: T;
   labels: Record<T, string>;
   onChange: (next: T) => void;

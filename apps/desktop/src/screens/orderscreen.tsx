@@ -8,8 +8,11 @@ import { useOrders } from "../state/orders";
 import { usePrinting } from "../state/printing";
 import { useStopList } from "../state/stoplist";
 import { useTables } from "../state/tables";
-import { MENU_CATEGORIES, findMenuItem, menuItemsOfCategory } from "../state/menu";
-import { formatMoney, multiplyMoney } from "../lib/money";
+import { useMenu } from "../state/menu";
+import { MenuNotice } from "./menunotice";
+import { formatMoney } from "../lib/money";
+import { lineTotal, unitPrice } from "../lib/order-price";
+import { FunctionBar, FunctionKey } from "../components/functionbar";
 import { SplitDialog } from "../components/splitdialog";
 
 /**
@@ -48,6 +51,11 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
   // на бумаге не то, что у него на экране.
   const { fireOrder } = usePrinting();
   const { isStopped, entryOf } = useStopList();
+  const {
+    categories,
+    itemsOfCategory,
+    status: menuStatus,
+  } = useMenu();
 
   const table = findTable(tableId);
   const order = orderOfTable(tableId);
@@ -56,9 +64,21 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
     if (!order) openOrder(tableId);
   }, [order, tableId, openOrder]);
 
-  const [activeCategoryId, setActiveCategoryId] = useState(
-    () => MENU_CATEGORIES[0].id,
-  );
+  /*
+   * Категория выбирается лениво: меню приезжает с узла, и на первом рендере
+   * его ещё нет. `null` — «ни одна не выбрана», а не «первая»; какая первая,
+   * станет известно, когда меню доедет.
+   */
+  const [pickedCategoryId, setPickedCategoryId] = useState<UUID | null>(null);
+  /*
+   * Выбранная категория может исчезнуть: меню перечитывают по кнопке, и там
+   * его правит менеджер. Ссылка на пропавшую категорию — это пустая сетка
+   * блюд с подсветкой на кнопке, которой в списке уже нет.
+   */
+  const activeCategoryId =
+    categories.find((category) => category.id === pickedCategoryId)?.id ??
+    categories[0]?.id ??
+    null;
   /** Доступ к чужому заказу, подтверждённый на этот заход. */
   const [isForeignApproved, setForeignApproved] = useState(false);
   /** Позиция, которую делят прямо сейчас. */
@@ -72,8 +92,8 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
   }, [tableId]);
 
   const categoryItems = useMemo(
-    () => menuItemsOfCategory(activeCategoryId),
-    [activeCategoryId],
+    () => (activeCategoryId ? itemsOfCategory(activeCategoryId) : []),
+    [activeCategoryId, itemsOfCategory],
   );
 
   // Один кадр между монтированием и созданием заказа в эффекте.
@@ -134,11 +154,20 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
   };
 
   return (
-    <div className="flex h-full w-full select-none gap-4 overflow-hidden p-4">
+    /*
+     * Раскладка iikoFront: чек слева, сетка блюд по центру, категории колонкой
+     * справа, функции полосой внизу.
+     *
+     * Без внешних отступов и скруглений намеренно. На моноблоке 1024x768 рамка
+     * в 16px по кругу — это 3% площади, отданные ни за что, а закруглённые углы
+     * панелей режут те самые пиксели, куда целится палец. Разделяем панели
+     * границами в один пиксель, а не воздухом.
+     */
+    <div className="flex h-full w-full select-none overflow-hidden bg-slate-950">
       {/* Чек стола */}
       {/* На 1024 фиксированные 384px съедали больше трети экрана. */}
-      <div className="flex w-80 shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800/80 bg-slate-950 shadow-2xl xl:w-96">
-        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 p-4">
+      <div className="flex w-80 shrink-0 flex-col overflow-hidden border-r border-slate-800 bg-slate-950 xl:w-96">
+        <div className="flex items-center justify-between border-b border-slate-800 bg-slate-900 p-3">
           <div>
             <h3 className="text-lg font-black text-emerald-400">
               Стол {table?.label ?? "—"}
@@ -153,16 +182,15 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
               />
             </div>
           </div>
-          <button
-            type="button"
-            onClick={back}
-            className="min-h-11 rounded-lg border border-slate-700/50 bg-slate-800 px-4 text-sm font-semibold transition hover:bg-slate-700 active:scale-95"
-          >
-            ← В зал
-          </button>
+          {/* «В зал» переехало в панель функций внизу: две кнопки с одним
+              действием на одном экране — это две мишени вместо одной
+              и лишний повод промахнуться. */}
+          <span className="text-2xl font-black tabular-nums text-slate-600">
+            №{order.number}
+          </span>
         </div>
 
-        <div className="flex-1 space-y-2 overflow-y-auto p-4">
+        <div className="flex-1 space-y-1 overflow-y-auto p-2">
           {items.length === 0 ? (
             <div className="flex h-full flex-col items-center justify-center text-slate-600">
               <span className="mb-2 text-3xl">📝</span>
@@ -186,101 +214,112 @@ export function OrderScreen({ tableId }: { tableId: UUID }) {
           )}
         </div>
 
-        <div className="space-y-3 border-t border-slate-800 bg-slate-900 p-4">
-          <div className="flex items-center justify-between px-1 text-lg font-black">
-            <span>ИТОГО:</span>
-            <span className="text-xl tabular-nums text-emerald-400">
-              {formatMoney(total)}
-            </span>
-          </div>
-
-          <button
-            type="button"
-            disabled={!canSend}
-            onClick={() => fireOrder(order.id)}
-            className="min-h-14 w-full rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-sm font-bold text-white shadow-lg shadow-emerald-900/20 transition hover:from-emerald-500 hover:to-teal-500 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-          >
-            {canSend ? "Отправить на кухню" : "Всё отправлено на кухню"}
-          </button>
-
-          <button
-            type="button"
-            disabled={items.length === 0 || !canPay}
-            onClick={goToPayment}
-            className="min-h-14 w-full rounded-xl border border-slate-700 bg-slate-800 text-sm font-bold text-slate-300 transition hover:bg-slate-700 active:scale-95 disabled:pointer-events-none disabled:opacity-40"
-          >
-            К оплате
-          </button>
-
-          {!canPay && (
-            <p className="text-center text-xs text-slate-600">
-              Оплату принимает кассир
-            </p>
-          )}
+        {/* Итог в чеке, действия — внизу экрана: так в iikoFront, и так
+            правильнее. Сумма нужна глазу постоянно, а кнопка «К оплате»
+            нажимается один раз за заказ, и держать её в узкой колонке
+            значит отдавать под неё место, которое нужнее строкам чека. */}
+        <div className="flex items-baseline justify-between border-t-2 border-slate-800 bg-slate-900 px-3 py-3">
+          <span className="text-sm font-bold uppercase tracking-wider text-slate-400">
+            Итого
+          </span>
+          <span className="text-3xl font-black tabular-nums text-emerald-400">
+            {formatMoney(total)}
+          </span>
         </div>
       </div>
 
-      {/* Меню */}
-      <div className="flex flex-1 flex-col gap-4 overflow-hidden">
-        {/* Переносим, а не прокручиваем: на 1024 категории не влезали в строку,
-            а горизонтальный скроллбар на сенсорном экране — мишень в пару
-            пикселей, и часть категорий просто не видна. */}
-        <div className="flex shrink-0 flex-wrap gap-2">
-          {MENU_CATEGORIES.map((category) => (
+      {/* Меню, категории и панель функций */}
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 flex-col overflow-hidden">
+          {menuStatus === "ready" ? null : (
+            <div className="p-3">
+              <MenuNotice />
+            </div>
+          )}
+
+          {/* Колонки считаем от ширины самой сетки, а не от вьюпорта: ширина
+              здесь зависит ещё и от панели чека, и брейкпоинты по экрану давали
+              на 1024 карточки по ~145px — под названия блюд в две строки мало.
+
+              Плитки плотнее и площе, чем были: в запару важно, сколько блюд
+              видно без прокрутки, а не насколько мягкие у карточки углы.
+              Цену держим крупной — по ней кассир сверяется вслух с гостем. */}
+          <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(160px,1fr))] content-start gap-2 overflow-y-auto p-3">
+            {categoryItems.map((menuItem) => (
+              <button
+                key={menuItem.id}
+                type="button"
+                // Стоп-лист терминала важнее флага в меню: он живой, его правит
+                // повар в течение смены, а `isStopListed` из меню — снимок.
+                disabled={isStopped(menuItem.id) || !canEditItems}
+                onClick={() => addItem(order.id, menuItem.id)}
+                className={cn(
+                  "flex h-24 flex-col justify-between rounded border-b-4 p-2 text-left transition",
+                  isStopped(menuItem.id)
+                    ? "cursor-not-allowed border-slate-800 bg-slate-900/60 opacity-50"
+                    : "border-orange-500/70 bg-slate-800 active:scale-95 hover:bg-slate-700",
+                )}
+              >
+                <span className="line-clamp-3 text-sm font-bold leading-tight text-slate-100">
+                  {menuItem.name}
+                </span>
+                {isStopped(menuItem.id) ? (
+                  <span className="text-xs font-bold uppercase text-rose-400">
+                    Стоп-лист
+                  </span>
+                ) : (
+                  <span className="flex items-baseline justify-between gap-1">
+                    <span className="text-base font-black tabular-nums text-orange-400">
+                      {formatMoney(menuItem.price)}
+                    </span>
+                    {/* Положительный остаток — предупреждение, а не запрет:
+                        блюдо ещё можно продать, и кнопку гасить рано. */}
+                    {entryOf(menuItem.id) && (
+                      <span className="text-xs font-bold text-amber-400">
+                        ост. {entryOf(menuItem.id)?.remainder}
+                      </span>
+                    )}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Полоса функций внизу — общий компонент, см. components/functionbar. */}
+          <FunctionBar>
+            <FunctionKey label="← В зал" onClick={back} />
+            <FunctionKey
+              label={canSend ? "Отправить на кухню" : "Всё отправлено"}
+              tone="accept"
+              disabled={!canSend}
+              onClick={() => fireOrder(order.id)}
+            />
+            <FunctionKey
+              label={canPay ? "К оплате" : "Оплату принимает кассир"}
+              tone="pay"
+              disabled={items.length === 0 || !canPay}
+              onClick={goToPayment}
+            />
+          </FunctionBar>
+        </div>
+
+        {/* Категории колонкой справа. Строкой сверху они переносились на две
+            и съедали высоту сетки блюд; колонка держит их на одном месте
+            независимо от числа и длины названий. */}
+        <div className="flex w-36 shrink-0 flex-col gap-px overflow-y-auto border-l border-slate-800 bg-slate-800 xl:w-44">
+          {categories.map((category) => (
             <button
               key={category.id}
               type="button"
-              onClick={() => setActiveCategoryId(category.id)}
+              onClick={() => setPickedCategoryId(category.id)}
               className={cn(
-                "min-h-14 whitespace-nowrap rounded-xl border px-4 text-sm font-bold uppercase tracking-wider transition active:scale-95",
+                "min-h-14 shrink-0 px-3 py-2 text-left text-sm font-bold uppercase leading-tight tracking-wide transition",
                 activeCategoryId === category.id
-                  ? "border-transparent bg-orange-500 text-white shadow-md shadow-orange-500/10"
-                  : "border-slate-700/50 bg-slate-800 text-slate-400 hover:bg-slate-700/60",
+                  ? "bg-orange-500 text-white"
+                  : "bg-slate-900 text-slate-400 hover:bg-slate-800",
               )}
             >
               {category.name}
-            </button>
-          ))}
-        </div>
-
-        {/* Колонки считаем от ширины самой сетки, а не от вьюпорта: ширина
-            здесь зависит ещё и от панели чека, и брейкпоинты по экрану давали
-            на 1024 карточки по ~145px — под названия блюд в две строки мало. */}
-        <div className="grid flex-1 auto-rows-min grid-cols-[repeat(auto-fill,minmax(190px,1fr))] content-start gap-3 overflow-y-auto pr-1">
-          {categoryItems.map((menuItem) => (
-            <button
-              key={menuItem.id}
-              type="button"
-              // Стоп-лист терминала важнее флага в меню: он живой, его правит
-              // повар в течение смены, а `isStopListed` из меню — снимок.
-              disabled={isStopped(menuItem.id) || !canEditItems}
-              onClick={() => addItem(order.id, menuItem.id)}
-              className={cn(
-                "group flex h-28 flex-col items-start justify-between rounded-2xl border p-4 text-left shadow-sm transition",
-                isStopped(menuItem.id)
-                  ? "cursor-not-allowed border-slate-800/40 bg-slate-900/40 opacity-50"
-                  : "border-slate-700/40 bg-slate-800/60 hover:border-slate-600/80 hover:bg-slate-800 active:scale-95",
-              )}
-            >
-              <span className="text-sm font-bold leading-tight text-slate-200 group-hover:text-white">
-                {menuItem.name}
-              </span>
-              {isStopped(menuItem.id) ? (
-                <span className="rounded-lg bg-rose-950/60 px-2 py-0.5 text-xs font-bold text-rose-400">
-                  Стоп-лист
-                </span>
-              ) : (
-                <span className="rounded-lg border border-slate-800/40 bg-slate-950/40 px-2 py-0.5 text-sm font-black tabular-nums text-orange-400">
-                  {formatMoney(menuItem.price)}
-                  {/* Положительный остаток — предупреждение, а не запрет:
-                      блюдо ещё можно продать, и кнопку гасить рано. */}
-                  {entryOf(menuItem.id) && (
-                    <span className="ml-2 text-xs text-amber-400">
-                      ост. {entryOf(menuItem.id)?.remainder}
-                    </span>
-                  )}
-                </span>
-              )}
             </button>
           ))}
         </div>
@@ -315,7 +354,10 @@ function GuestCounter({
         type="button"
         aria-label="Меньше гостей"
         onClick={() => onChange(Math.max(1, value - 1))}
-        className="min-h-11 w-8 text-sm text-slate-400 transition active:bg-slate-700"
+        // Ширина тоже 44, а не только высота: цель касания меряется по обеим
+        // сторонам, и кнопка 32px шириной промахивается пальцем ровно так же,
+        // как низкая. Замер на 1024x768 её и поймал.
+        className="min-h-11 w-11 text-lg text-slate-400 transition active:bg-slate-700"
       >
         −
       </button>
@@ -326,7 +368,10 @@ function GuestCounter({
         type="button"
         aria-label="Больше гостей"
         onClick={() => onChange(value + 1)}
-        className="min-h-11 w-8 text-sm text-slate-400 transition active:bg-slate-700"
+        // Ширина тоже 44, а не только высота: цель касания меряется по обеим
+        // сторонам, и кнопка 32px шириной промахивается пальцем ровно так же,
+        // как низкая. Замер на 1024x768 её и поймал.
+        className="min-h-11 w-11 text-lg text-slate-400 transition active:bg-slate-700"
       >
         +
       </button>
@@ -401,6 +446,7 @@ function CheckLine({
   onServe: (itemId: UUID) => void;
   onSplit: (itemId: UUID) => void;
 }) {
+  const { findMenuItem } = useMenu();
   const menuItem = findMenuItem(item.menuItemId);
   const isEditable = item.status === "new" && canEdit;
   const isVoided = item.status === "voided";
@@ -443,7 +489,7 @@ function CheckLine({
             {menuItem?.name ?? "Позиция удалена из меню"}
           </p>
           <p className="text-xs tabular-nums text-slate-500">
-            {menuItem ? formatMoney(menuItem.price) : "—"}
+            {formatMoney(unitPrice(item, findMenuItem))}
             {item.guestNumber != null && (
               <span className="ml-2 text-orange-400/80">
                 гость {item.guestNumber}
@@ -457,7 +503,7 @@ function CheckLine({
             (isVoided || isSplit) && "line-through",
           )}
         >
-          {menuItem ? formatMoney(multiplyMoney(menuItem.price, item.quantity)) : "—"}
+          {formatMoney(lineTotal(item, findMenuItem))}
         </span>
       </div>
 

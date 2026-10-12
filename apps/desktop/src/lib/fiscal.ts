@@ -138,38 +138,86 @@ function requireTauri(): void {
   }
 }
 
+/**
+ * Вызов команды ККТ с внятной ошибкой.
+ *
+ * `invoke` отклоняет промис **сырым значением** — для `Result<T, String>`
+ * в Rust это обычная строка, а не `Error`. Экраны же проверяют
+ * `error instanceof Error` и на строке сваливались в общую подпись:
+ * кассир видел «Смена в ККТ не открыта» вместо «Ресурс хранения ФД исчерпан».
+ * Причина отказа терялась ровно там, где она единственно и нужна.
+ */
+async function call<T>(
+  command: string,
+  args?: Record<string, unknown>,
+): Promise<T> {
+  try {
+    return await invoke<T>(command, args);
+  } catch (reason) {
+    throw reason instanceof Error ? reason : new Error(String(reason));
+  }
+}
+
+/**
+ * Сказать драйверу, по какому адресу стоит ККТ.
+ *
+ * Без этого поле «порт» в карточке ККМ было бы декоративным: драйвер брал бы
+ * адрес из константы в Rust, а кассир, поменявший IP на экране оборудования,
+ * не увидел бы никакого эффекта и пошёл бы искать причину в кабеле.
+ *
+ * Молчит в браузере намеренно — в отличие от остальных вызовов. Настройка
+ * это не расчёт гостя: падать здесь значило бы ронять экран оборудования
+ * при отладке фронта без Tauri.
+ */
+export async function fiscalConfigure(ip: string, port: number): Promise<void> {
+  if (!isTauri()) return;
+  await call("fiscal_configure", { ip, port });
+}
+
+/**
+ * Тестовая печать: проверка связи с ККТ до всякой фискализации.
+ *
+ * Нефискальный документ, поэтому проходит и на кассе с пустым или закрытым
+ * накопителем — это единственный способ отличить «нет связи» от «ФН не даёт
+ * пробить чек», не разбирая коды ошибок.
+ */
+export async function fiscalPrintTest(): Promise<void> {
+  requireTauri();
+  await call("fiscal_print_test");
+}
+
 export async function fiscalStatus(): Promise<FiscalDeviceStatus> {
   requireTauri();
-  return invoke<FiscalDeviceStatus>("fiscal_status");
+  return call<FiscalDeviceStatus>("fiscal_status");
 }
 
 export async function fiscalOpenShift(cashierName: string): Promise<number> {
   requireTauri();
-  return invoke<number>("fiscal_open_shift", { cashierName });
+  return call<number>("fiscal_open_shift", { cashierName });
 }
 
 export async function fiscalCloseShift(cashierName: string): Promise<ZReport> {
   requireTauri();
-  return invoke<ZReport>("fiscal_close_shift", { cashierName });
+  return call<ZReport>("fiscal_close_shift", { cashierName });
 }
 
 /** X-отчёт: срез без гашения, смену не закрывает. */
 export async function fiscalXReport(): Promise<ZReport> {
   requireTauri();
-  return invoke<ZReport>("fiscal_x_report");
+  return call<ZReport>("fiscal_x_report");
 }
 
 export async function fiscalRegister(
   request: FiscalReceiptRequest,
 ): Promise<RegistrationOutcome> {
   requireTauri();
-  return invoke<RegistrationOutcome>("fiscal_register", { request });
+  return call<RegistrationOutcome>("fiscal_register", { request });
 }
 
 /** Только для дев-панели: в релизной сборке команды не существует. */
 export async function fiscalSimulate(scenario: FiscalScenario): Promise<void> {
   requireTauri();
-  await invoke("fiscal_simulate", { scenario });
+  await call("fiscal_simulate", { scenario });
 }
 
 /** Человекочитаемая причина отказа ККТ. */

@@ -18,6 +18,7 @@ import { CheckoutProvider } from "./state/checkout";
 import { OrdersProvider } from "./state/orders";
 import { PrintingProvider } from "./state/printing";
 import { DeliveryProvider } from "./state/delivery";
+import { MenuProvider } from "./state/menu";
 import { GuestsProvider } from "./state/guests";
 import { ShiftsProvider } from "./state/shifts";
 import { DevicesProvider } from "./state/devices";
@@ -123,6 +124,10 @@ function Terminal() {
           staffId={staff.id}
           tracksAttendance={permissions.has("staff.self")}
         >
+          {/* Меню выше стоп-листа и заказов: обоим оно нужно готовым. Заказ
+              берёт из него цену и станцию приготовления, стоп-лист —
+              классификатор, из которого выбирают, чего сегодня нет. */}
+          <MenuProvider venueId={venue.id}>
           {/* Стоп-лист выше заказов: добавление позиции обязано знать,
               не кончилось ли блюдо. */}
           <StopListProvider staffId={staff.id}>
@@ -153,6 +158,7 @@ function Terminal() {
               </OrdersProvider>
             </TablesProvider>
           </StopListProvider>
+          </MenuProvider>
           </ShiftsProvider>
         </StationsProvider>
       </DevicesProvider>

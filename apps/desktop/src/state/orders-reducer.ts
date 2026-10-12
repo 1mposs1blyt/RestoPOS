@@ -6,7 +6,6 @@ import type {
   Payment,
   UUID,
 } from "@restopos/shared-types";
-import { findMenuItem } from "./menu";
 
 /**
  * Чистая логика заказов: состояние, действия и редьюсер, без React.
@@ -34,7 +33,26 @@ export const EMPTY_STATE: OrdersState = {
 export type OrdersAction =
   | { type: "order/open"; order: Order }
   | { type: "order/cancel"; orderId: UUID }
-  | { type: "order/send"; orderId: UUID; autoReadyStationIds: readonly UUID[] }
+  | {
+      type: "order/send";
+      orderId: UUID;
+      /**
+       * Станция позиции. Приезжает функцией, а не берётся из меню здесь:
+       * меню — это запрос к узлу, а редьюсер обязан оставаться чистым.
+       * До переезда меню он импортировал демо-каталог напрямую, и тесты
+       * отправки на кухню молча зависели от того, что «Борщ» готовят
+       * на кухне, а «Морс» на баре.
+       */
+      stationOf: (menuItemId: UUID) => UUID | null;
+      /**
+       * Станции, у которых есть включённый экран. Список именно такой,
+       * а не обратный «станции без экрана»: станция позиции приезжает с меню
+       * узла и может быть терминалу незнакома, а перечислить все станции,
+       * которых у нас нет, невозможно. Всё, чего нет в этом списке, работает
+       * по бумаге — см. `stationIdsWithScreen` в `shared-types`.
+       */
+      screenStationIds: readonly UUID[];
+    }
   /**
    * Оплата приходит **набором** строк, а не по одной: гость платит частью
    * картой, частью наличными, и чек закрывается целиком либо не закрывается.
@@ -194,10 +212,15 @@ export function reducer(state: OrdersState, action: OrdersAction): OrdersState {
          * Станция без экрана работает по бумаге: отмечать готовность на ней
          * некому, и позиция, оставленная в `cooking`, висела бы в очереди
          * вечно. Марка напечатана — считаем, что повар её видит.
+         *
+         * Незнакомая станция — тот же случай, и решается он тем, что вопрос
+         * задан «есть ли экран», а не «числится ли станция бумажной»:
+         * идентификатор с узла, которого нет в справочнике терминала,
+         * экрана не имеет и потому работает по бумаге.
          */
-        const stationId = findMenuItem(item.menuItemId)?.prepStationId ?? null;
+        const stationId = action.stationOf(item.menuItemId);
         const isAutoReady =
-          stationId === null || action.autoReadyStationIds.includes(stationId);
+          stationId === null || !action.screenStationIds.includes(stationId);
 
         items[item.id] = { ...item, status: isAutoReady ? "ready" : "cooking" };
         fired += 1;

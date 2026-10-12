@@ -17,13 +17,15 @@ import type {
   TableStatus,
   UUID,
 } from "@restopos/shared-types";
+import { stationIdsWithScreen } from "@restopos/shared-types";
 import { loadState, newId, saveState } from "../lib/storage";
-import { multiplyMoney, sumMoney } from "../lib/money";
+import { sumMoney, ZERO_MONEY } from "../lib/money";
+import { lineTotal } from "../lib/order-price";
 import { computeTotals, type OrderTotals } from "../lib/discount";
 import { refundablePayments } from "../lib/refund";
 import { findDiscountType } from "../data/discount-types";
 import { findPaymentType } from "../data/payment-types";
-import { findMenuItem } from "./menu";
+import { useMenu } from "./menu";
 import { useShifts } from "./shifts";
 import {
   ACTIVE_STATUSES,
@@ -39,7 +41,12 @@ import { useStations } from "./stations";
  *
  * Пока это единственный источник данных, но форма подобрана под будущий обмен
  * с бэкендом: сущности хранятся плоско и по идентификаторам, ровно как приходят
- * из API, а не деревом. Пересчёт сумм — из меню, а не из снимка цены в позиции.
+ * из API, а не деревом.
+ *
+ * **Цена лежит снимком в самой позиции** (`OrderItem.price`), а не берётся
+ * из меню при каждом пересчёте: меню правят в течение смены, и без снимка
+ * уже собранный чек менялся бы задним числом. Единственное место, где это
+ * решается, — `lib/order-price.ts`.
  *
  * Инвариант №6 (append-only для `order_items`) выражен статусом позиции:
  * пока она `new` — ещё не ушла на кухню и её можно править или удалить;
@@ -158,8 +165,12 @@ const OrdersContext = createContext<OrdersValue | null>(null);
  * Род и название типа копируются в платёж снимком, а не берутся по ссылке
  * при отрисовке: закрытый чек — финансовый документ, и переименование типа
  * оплаты через год не должно менять то, что напечатано в прошлогоднем Z-отчёте.
+ *
+ * Экспортируется ради теста на чек возврата (`checkout-receipt.test.ts`):
+ * возврат собирается от **записанных** платежей, и проверять его состав
+ * нужно от тех же строк, что записала продажа, а не от выдуманных вручную.
  */
-function toPayment(
+export function toPayment(
   draft: PaymentDraft,
   orderId: UUID,
   cashShiftId: UUID,
@@ -202,17 +213,35 @@ export function OrdersProvider({
 }) {
   const { cashShift } = useShifts();
   const [state, dispatch] = useReducer(reducer, undefined, loadOrders);
-  const { stations, hasScreenOf } = useStations();
+  const { outputs } = useStations();
+  const { findMenuItem } = useMenu();
+
+  /**
+   * Станция позиции для редьюсера.
+   *
+   * Отдельная ссылка, а не `findMenuItem` внутри редьюсера: тот обязан
+   * оставаться чистым, а меню приезжает с узла и меняется под ногами.
+   */
+  const stationOf = useCallback(
+    (menuItemId: UUID) => findMenuItem(menuItemId)?.prepStationId ?? null,
+    [findMenuItem],
+  );
 
   useEffect(() => {
     saveState(STORAGE_KEY, state);
   }, [state]);
 
-  /** Станции, где готовность отмечать некому: там только бумага. */
-  const autoReadyStationIds = useMemo(
-    () =>
-      stations.filter((station) => !hasScreenOf(station.id)).map((s) => s.id),
-    [stations, hasScreenOf],
+  /**
+   * Станции с экраном — то есть те, где готовность отмечает человек.
+   *
+   * Считается от выводов, а не от справочника станций: станция позиции
+   * приезжает с меню узла, и её идентификатора в справочнике терминала может
+   * не быть вовсе. Всё, чего нет в этом списке, работает по бумаге и готово
+   * сразу после отправки.
+   */
+  const screenStationIds = useMemo(
+    () => stationIdsWithScreen(outputs),
+    [outputs],
   );
 
   const itemsOfOrder = useCallback(
@@ -234,14 +263,12 @@ export function OrdersProvider({
            *            оба уровня значит взять с гостя дважды.
            */
           .filter((item) => item.status !== "voided" && item.status !== "split")
-          .map((item) => {
-            const menuItem = findMenuItem(item.menuItemId);
-            return menuItem
-              ? multiplyMoney(menuItem.price, item.quantity)
-              : "0.00";
-          }),
+          // Цена берётся из самой позиции — снимок на момент добавления
+          // (`lib/order-price.ts`). Меню тут только запасной вариант
+          // для заказов, набранных до появления поля.
+          .map((item) => lineTotal(item, findMenuItem)),
       ),
-    [itemsOfOrder],
+    [itemsOfOrder, findMenuItem],
   );
 
   const discountsOfOrder = useCallback(
@@ -301,7 +328,7 @@ export function OrdersProvider({
 
     for (const item of Object.values(state.items)) {
       if (item.status !== "cooking" && item.status !== "ready") continue;
-      const stationId = findMenuItem(item.menuItemId)?.prepStationId ?? null;
+      const stationId = stationOf(item.menuItemId);
       const key = `${item.orderId}:${stationId ?? "-"}`;
       const bucket = pending.get(key);
       if (bucket) bucket.items.push(item);
@@ -320,7 +347,7 @@ export function OrdersProvider({
           new Date(a.order.createdAt).getTime() -
           new Date(b.order.createdAt).getTime(),
       );
-  }, [state.items, state.orders]);
+  }, [state.items, state.orders, stationOf]);
 
   /**
    * Открыть заказ на столе (или на прилавке, если `tableId` — `null`).
@@ -352,19 +379,28 @@ export function OrdersProvider({
   );
 
   /** Ту же позицию в статусе `new` редьюсер склеит, увеличив количество. */
-  const addItem = useCallback((orderId: UUID, menuItemId: UUID) => {
-    dispatch({
-      type: "item/add",
-      item: {
-        id: newId(),
-        orderId,
-        menuItemId,
-        quantity: 1,
-        status: "new",
-        modifierIds: [],
-      },
-    });
-  }, []);
+  const addItem = useCallback(
+    (orderId: UUID, menuItemId: UUID) => {
+      dispatch({
+        type: "item/add",
+        item: {
+          id: newId(),
+          orderId,
+          menuItemId,
+          quantity: 1,
+          /*
+           * Цену снимаем здесь и запоминаем в позиции. Дальше по чеку она
+           * уже не пересчитывается: правка меню посреди смены не должна
+           * менять сумму, которую гостю назвали при заказе.
+           */
+          price: findMenuItem(menuItemId)?.price ?? ZERO_MONEY,
+          status: "new",
+          modifierIds: [],
+        },
+      });
+    },
+    [findMenuItem],
+  );
 
   const value = useMemo<OrdersValue>(
     () => ({
@@ -439,7 +475,7 @@ export function OrdersProvider({
       setItemStatus: (itemId, status) =>
         dispatch({ type: "item/status", itemId, status }),
       sendToKitchen: (orderId) =>
-        dispatch({ type: "order/send", orderId, autoReadyStationIds }),
+        dispatch({ type: "order/send", orderId, stationOf, screenStationIds }),
       payOrder: (orderId, drafts) => {
         // Без открытой кассовой смены чек не к чему привязать: у него не будет
         // ни номера смены, ни места в Z-отчёте. Экран оплаты до этого места
@@ -503,7 +539,8 @@ export function OrdersProvider({
       discountsOfOrder,
       openOrder,
       addItem,
-      autoReadyStationIds,
+      stationOf,
+      screenStationIds,
       cashShift,
       waiterId,
     ],

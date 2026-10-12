@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import type { FeatureCode, PlanCode } from "@restopos/shared-types";
+import { CONTRACT_PLAN_FEATURES } from "@restopos/shared-types";
 import { loadState, saveState } from "../lib/storage";
 
 /**
@@ -16,25 +17,11 @@ import { loadState, saveState } from "../lib/storage";
  * на бэкенде в `requireFeature(...)`; прямой запрос к API в обход интерфейса
  * обязан получать 403 независимо от того, что решил `FeatureGate`.
  *
- * Пока подписок нет, набор фич задаётся локально и переключается в дев-панели,
- * чтобы экраны сразу писались с учётом закрытых модулей.
+ * Пока подписок нет, тариф переключается в дев-панели, чтобы экраны сразу
+ * писались с учётом закрытых модулей. Сам набор модулей при этом берётся
+ * из контракта (`CONTRACT_PLAN_FEATURES`), а не задаётся здесь: рукописная
+ * копия лестницы разъедется с бэкендом на первой правке.
  */
-
-const PLAN_FEATURES: Record<PlanCode, FeatureCode[]> = {
-  start: [],
-  standard: ["kds", "warehouse", "delivery", "reports"],
-  pro: [
-    "kds",
-    "warehouse",
-    "delivery",
-    "reports",
-    "egais",
-    "loyalty",
-    "analytics",
-    "suppliers",
-    "multi_venue",
-  ],
-};
 
 export const PLAN_LABELS: Record<PlanCode, string> = {
   start: "Start",
@@ -65,7 +52,7 @@ export function EntitlementsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo<EntitlementsValue>(() => {
-    const features = new Set(PLAN_FEATURES[plan]);
+    const features = new Set(CONTRACT_PLAN_FEATURES[plan]);
     return {
       plan,
       features,
@@ -102,7 +89,12 @@ export function FeatureGate({ feature, children, fallback }: FeatureGateProps) {
   return <>{fallback ?? <FeatureUpsell feature={feature} />}</>;
 }
 
-const FEATURE_LABELS: Partial<Record<FeatureCode, string>> = {
+/**
+ * Названия модулей для человека. Контракт нейтрален по языку и имён не несёт,
+ * поэтому они здесь — но записью `Record`, а не `Partial`: фича, добавленная
+ * в контракт и забытая тут, обязана уронить сборку, а не показать гостю код.
+ */
+const FEATURE_LABELS: Record<FeatureCode, string> = {
   kds: "Кухонный экран",
   warehouse: "Складской учёт",
   delivery: "Доставка",
@@ -120,7 +112,7 @@ function FeatureUpsell({ feature }: { feature: FeatureCode }) {
       <div className="max-w-sm space-y-3 rounded-2xl border border-slate-800 bg-slate-950/60 p-8 text-center">
         <span className="text-4xl">🔒</span>
         <h2 className="text-lg font-bold text-slate-200">
-          {FEATURE_LABELS[feature] ?? feature}
+          {FEATURE_LABELS[feature]}
         </h2>
         <p className="text-sm text-slate-500">
           Модуль не входит в текущий тариф организации. Подключается в разделе

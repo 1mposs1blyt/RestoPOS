@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { cn } from "@restopos/ui-kit";
 import { useNavigation } from "../app/navigation";
 import { findStaff } from "../data/session-source";
-import { findMenuItem } from "../state/menu";
+import { useMenu } from "../state/menu";
 import { useOrders } from "../state/orders";
 import { formatMoney } from "../lib/money";
 
@@ -23,6 +23,7 @@ type Tab = "documents" | "open" | "closed";
 export function DocumentsScreen() {
   const { back } = useNavigation();
   const { state, itemsOfOrder, orderTotal, paymentsOfOrder } = useOrders();
+  const { findMenuItem } = useMenu();
   const [tab, setTab] = useState<Tab>("open");
 
   const orders = useMemo(() => Object.values(state.orders), [state.orders]);

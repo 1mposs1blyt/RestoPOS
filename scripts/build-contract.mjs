@@ -65,12 +65,105 @@ for (const role of contract.roles) {
   }
 }
 
+// ── Тарифы ──────────────────────────────────────────────────────────────────
+//
+// Проверок здесь больше, чем у прав, и не от занудства: тариф — это механизм
+// монетизации, и ошибка в нём либо отдаёт оплаченный модуль бесплатно, либо
+// отбирает у клиента то, за что он заплатил. Оба случая замечают не в тестах.
+
+const QUOTA_FIELDS = ["maxTerminals", "maxVenues", "maxStaff"];
+
+// Коды уходят в оба языка ключами объекта и словаря, поэтому держим их
+// пригодными для идентификатора: «multi-venue» с дефисом сгенерировал бы
+// синтаксически неверный TypeScript, и упало бы это уже в чужом файле.
+for (const code of [...contract.planCodes, ...contract.featureCodes]) {
+  if (!/^[a-z][a-z0-9_]*$/.test(code)) {
+    throw new Error(
+      `код «${code}»: допустимы строчные латинские буквы, цифры и подчёркивание`,
+    );
+  }
+}
+
+for (const plan of contract.planCodes) {
+  if (!(plan in contract.planFeatures)) {
+    throw new Error(`planFeatures: не описан тариф «${plan}»`);
+  }
+  if (!(plan in contract.planQuotas)) {
+    throw new Error(`planQuotas: не описан тариф «${plan}»`);
+  }
+  for (const feature of contract.planFeatures[plan]) {
+    if (!contract.featureCodes.includes(feature)) {
+      throw new Error(`planFeatures.${plan}: «${feature}» нет в featureCodes`);
+    }
+  }
+  for (const field of QUOTA_FIELDS) {
+    const value = contract.planQuotas[plan][field];
+    if (!Number.isInteger(value) || value < 1) {
+      throw new Error(
+        `planQuotas.${plan}.${field}: ожидалось целое ≥ 1, получено ${JSON.stringify(value)}`,
+      );
+    }
+  }
+}
+for (const plan of Object.keys(contract.planFeatures)) {
+  if (!contract.planCodes.includes(plan)) {
+    throw new Error(`planFeatures: тарифа «${plan}» нет в planCodes`);
+  }
+}
+
+// Лестница обязана расти. `planCodes` перечислены от дешёвого к дорогому, и
+// апгрейд, который что-то ОТБИРАЕТ, — это не опечатка, а счёт клиента за то,
+// чего он лишился. Ловим на сборке, а не по обращению в поддержку.
+for (let i = 1; i < contract.planCodes.length; i += 1) {
+  const lower = contract.planCodes[i - 1];
+  const upper = contract.planCodes[i];
+
+  for (const feature of contract.planFeatures[lower]) {
+    if (!contract.planFeatures[upper].includes(feature)) {
+      throw new Error(
+        `planFeatures: «${upper}» дороже «${lower}», но не включает «${feature}»`,
+      );
+    }
+  }
+  for (const field of QUOTA_FIELDS) {
+    if (contract.planQuotas[upper][field] < contract.planQuotas[lower][field]) {
+      throw new Error(
+        `planQuotas: «${upper}» дороже «${lower}», но ${field} меньше`,
+      );
+    }
+  }
+}
+
 const rolePermissions = contract.roles
   .map((role) => {
     const list = contract.rolePermissions[role]
       .map((permission) => `    ${JSON.stringify(permission)},`)
       .join("\n");
     return `  ${role}: [\n${list}\n  ],`;
+  })
+  .join("\n");
+
+/** Набор фич тарифа: пустой — одной строкой, иначе по элементу на строку. */
+function tsFeatureList(features) {
+  if (features.length === 0) return "[]";
+  const list = features
+    .map((feature) => `    ${JSON.stringify(feature)},`)
+    .join("\n");
+  return `[\n${list}\n  ]`;
+}
+
+const tsPlanFeatures = contract.planCodes
+  .map((plan) => `  ${plan}: ${tsFeatureList(contract.planFeatures[plan])},`)
+  .join("\n");
+
+const tsQuotaFields = QUOTA_FIELDS.map((field) => `  ${field}: number;`).join("\n");
+
+const tsPlanQuotas = contract.planCodes
+  .map((plan) => {
+    const fields = QUOTA_FIELDS.map(
+      (field) => `${field}: ${contract.planQuotas[plan][field]}`,
+    ).join(", ");
+    return `  ${plan}: { ${fields} },`;
   })
   .join("\n");
 
@@ -128,6 +221,45 @@ export const CONTRACT_ROLE_PERMISSIONS: Record<
 > = {
 ${rolePermissions}
 };
+
+export type ContractPlanCode =
+${union(contract.planCodes)};
+
+export type ContractFeatureCode =
+${union(contract.featureCodes)};
+
+/** Тарифы от дешёвого к дорогому: порядок значим, лестница обязана расти. */
+export const CONTRACT_PLAN_CODES: readonly ContractPlanCode[] = [
+${contract.planCodes.map((p) => `  ${JSON.stringify(p)},`).join("\n")}
+];
+
+export const CONTRACT_FEATURE_CODES: readonly ContractFeatureCode[] = [
+${contract.featureCodes.map((f) => `  ${JSON.stringify(f)},`).join("\n")}
+];
+
+/**
+ * Булевы модули тарифа. Числовые ограничения сюда не входят намеренно
+ * (инвариант №2): они живут в \`CONTRACT_PLAN_QUOTAS\` и проверяются счётом
+ * текущего использования, а не наличием флага.
+ */
+export const CONTRACT_PLAN_FEATURES: Record<
+  ContractPlanCode,
+  readonly ContractFeatureCode[]
+> = {
+${tsPlanFeatures}
+};
+
+/** Числовые лимиты тарифа: проверяются счётом использования, а не флагом. */
+export interface ContractPlanQuota {
+${tsQuotaFields}
+}
+
+export const CONTRACT_PLAN_QUOTAS: Record<
+  ContractPlanCode,
+  ContractPlanQuota
+> = {
+${tsPlanQuotas}
+};
 `;
 
 /** `["a", "b"]` элементами по строке с заданным отступом. */
@@ -142,6 +274,33 @@ const csRolePermissions = contract.roles
   })
   .join("\n");
 
+// `new[] { }` вывести тип элемента не может и не компилируется — у тарифа
+// без модулей (start) набор пустой, поэтому он записывается явно.
+const csPlanFeatures = contract.planCodes
+  .map((plan) => {
+    const features = contract.planFeatures[plan];
+    if (features.length === 0) {
+      return `        [${JSON.stringify(plan)}] = Array.Empty<string>(),`;
+    }
+    const list = csList(features, "            ");
+    return `        [${JSON.stringify(plan)}] = new[]\n        {\n${list}\n        },`;
+  })
+  .join("\n");
+
+/** `maxTerminals` → `MaxTerminals`: имена полей квот идут из того же списка. */
+const pascal = (field) => field[0].toUpperCase() + field.slice(1);
+
+const csQuotaParams = QUOTA_FIELDS.map((field) => `int ${pascal(field)}`).join(", ");
+
+const csPlanQuotas = contract.planCodes
+  .map((plan) => {
+    const args = QUOTA_FIELDS.map(
+      (field) => contract.planQuotas[plan][field],
+    ).join(", ");
+    return `        [${JSON.stringify(plan)}] = new PlanQuota(${args}),`;
+  })
+  .join("\n");
+
 const csharpOutput = `/*
  * СГЕНЕРИРОВАННЫЙ ФАЙЛ — не редактировать.
  * Источник: contracts/contract.json, генератор: scripts/build-contract.mjs.
@@ -151,6 +310,11 @@ const csharpOutput = `/*
  * копия здесь разъезжается с фронтом на первой же правке контракта, и заметно
  * это становится по симптому вида «у менеджера пропал конструктор зала».
  */
+
+// Файл с именем *.generated.cs компилятор считает автогенерируемым и выключает
+// в нём контекст nullable, несмотря на <Nullable>enable</Nullable> в csproj:
+// без этой строки \`PlanQuota?\` молча теряет смысл, а сборка узла даёт CS8669.
+#nullable enable
 
 namespace server;
 
@@ -207,6 +371,45 @@ ${csRolePermissions}
     /// </summary>
     public static bool CanApprove(string role, string permission) =>
         Overridable.Contains(permission) && HasPermission(role, permission);
+
+    /// <summary>Тарифы от дешёвого к дорогому: порядок значим, лестница обязана расти.</summary>
+    public static readonly IReadOnlyList<string> PlanCodes = new[]
+    {
+${csList(contract.planCodes, "        ")}
+    };
+
+    public static readonly IReadOnlyList<string> FeatureCodes = new[]
+    {
+${csList(contract.featureCodes, "        ")}
+    };
+
+    /// <summary>
+    /// Булевы модули тарифа. Числовые ограничения сюда не входят намеренно
+    /// (инвариант №2): они живут в PlanQuotas и проверяются счётом текущего
+    /// использования, а не наличием флага.
+    /// </summary>
+    public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> PlanFeatures =
+        new Dictionary<string, IReadOnlyList<string>>
+    {
+${csPlanFeatures}
+    };
+
+    /// <summary>Числовые лимиты тарифа: проверяются счётом использования, а не флагом.</summary>
+    public sealed record PlanQuota(${csQuotaParams});
+
+    public static readonly IReadOnlyDictionary<string, PlanQuota> PlanQuotas =
+        new Dictionary<string, PlanQuota>
+    {
+${csPlanQuotas}
+    };
+
+    /// <summary>Входит ли модуль в тариф. Неизвестный тариф — не входит: отказ решает вызывающий.</summary>
+    public static bool PlanHasFeature(string plan, string feature) =>
+        PlanFeatures.TryGetValue(plan, out var features) && features.Contains(feature);
+
+    /// <summary>Лимиты тарифа. Неизвестный тариф — null, а не исключение: как и у PermissionsOf.</summary>
+    public static PlanQuota? QuotasOf(string plan) =>
+        PlanQuotas.TryGetValue(plan, out var quotas) ? quotas : null;
 }
 `;
 
@@ -245,6 +448,7 @@ if (process.argv.includes("--check")) {
   }
   console.log(
     `Сгенерировано (${artifacts.length} файла): ${contract.permissions.length} прав, ` +
-      `${contract.roles.length} ролей, ${contract.errorCodes.length} кодов ошибок.`,
+      `${contract.roles.length} ролей, ${contract.errorCodes.length} кодов ошибок, ` +
+      `${contract.planCodes.length} тарифа, ${contract.featureCodes.length} фич.`,
   );
 }

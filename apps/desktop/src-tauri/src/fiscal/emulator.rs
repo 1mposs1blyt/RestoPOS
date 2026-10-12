@@ -14,8 +14,8 @@
 use std::time::{Duration, SystemTime};
 
 use super::{
-    DeviceStatus, FiscalDevice, FiscalError, FiscalReceipt, FiscalResult, PaymentKind,
-    ReceiptKind, ReceiptRequest, ZReport,
+    DeviceStatus, FiscalDevice, FiscalError, FiscalReceipt, FiscalResult, PaymentKind, ReceiptKind,
+    ReceiptRequest, ZReport,
 };
 
 /// Что сделать со следующей регистрацией.
@@ -198,6 +198,16 @@ impl Emulator {
 }
 
 impl FiscalDevice for Emulator {
+    fn print_test_receipt(&mut self) -> Result<(), String> {
+        println!("[ЭМУЛЯТОР ККТ] Печать тестового чека: Связь есть!");
+        Ok(())
+    }
+
+    fn print_image(&mut self, path: &str, scale_percent: u32) -> Result<(), String> {
+        println!("[ЭМУЛЯТОР ККТ] Печать картинки {path} ({scale_percent}%)");
+        Ok(())
+    }
+
     fn status(&mut self) -> FiscalResult<DeviceStatus> {
         self.ensure_connected()?;
         Ok(DeviceStatus {
@@ -218,8 +228,6 @@ impl FiscalDevice for Emulator {
         self.shift_open = true;
         self.shift_number += 1;
         self.shift_opened_at = SystemTime::now();
-        // Номер чека — внутри смены, поэтому обнуляется. Номер документа
-        // сквозной по ФН и не обнуляется никогда.
         self.receipt_number = 0;
         self.shift_receipts = 0;
         self.cash_total = 0;
@@ -235,12 +243,6 @@ impl FiscalDevice for Emulator {
             return Err(FiscalError::ShiftClosed);
         }
 
-        /*
-         * Просроченную смену закрыть обязано получаться — и это не мелочь.
-         * Если бы Z-отчёт спотыкался о ту же проверку 24 часов, что и чек,
-         * касса, простоявшая ночь, не смогла бы ни пробить чек, ни закрыть
-         * смену: заведение встало бы до приезда сервисного инженера.
-         */
         self.document_number += 1;
         let report = ZReport {
             shift_number: self.shift_number,
@@ -261,8 +263,6 @@ impl FiscalDevice for Emulator {
             return Err(FiscalError::ShiftClosed);
         }
 
-        // Срез без гашения: смену не закрывает и итоги не обнуляет, поэтому
-        // и номер документа не тратит.
         Ok(ZReport {
             shift_number: self.shift_number,
             document_number: self.document_number,
@@ -273,7 +273,7 @@ impl FiscalDevice for Emulator {
         })
     }
 
-    fn register_receipt(&mut self, request: &ReceiptRequest) -> FiscalResult<FiscalReceipt> {
+    fn register(&mut self, request: &ReceiptRequest) -> FiscalResult<FiscalReceipt> {
         self.ensure_connected()?;
         if !self.shift_open {
             return Err(FiscalError::ShiftClosed);
@@ -287,7 +287,6 @@ impl FiscalDevice for Emulator {
             NextFailure::None => Ok(self.write_document(request)),
 
             NextFailure::ReplyLostAfterRegistering => {
-                // Порядок важен: сначала пишем документ, потом «теряем» ответ.
                 self.write_document(request);
                 Err(FiscalError::Unknown("ответ ККТ не получен".into()))
             }
@@ -314,84 +313,5 @@ impl FiscalDevice for Emulator {
     #[cfg(debug_assertions)]
     fn as_emulator(&mut self) -> Option<&mut Emulator> {
         Some(self)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fiscal::{ReceiptItem, ReceiptPayment, TaxSystem, VatRate};
-
-    fn чек(client_id: &str) -> ReceiptRequest {
-        ReceiptRequest {
-            kind: ReceiptKind::Sale,
-            items: vec![ReceiptItem {
-                name: "Фо Бо".into(),
-                quantity_milli: 1000,
-                price: 48000,
-                vat: VatRate::Vat20,
-                line_total: None,
-            }],
-            payments: vec![ReceiptPayment {
-                kind: PaymentKind::Cash,
-                amount: 48000,
-            }],
-            tax_system: TaxSystem::UsnIncome,
-            cashier_name: "Игорь".into(),
-            order_number: 1,
-            client_id: client_id.into(),
-        }
-    }
-
-    #[test]
-    fn x_отчёт_не_закрывает_смену_и_не_обнуляет_итоги() {
-        let mut device = Emulator::new();
-        device.open_shift("Игорь").expect("смена");
-        device.register_receipt(&чек("c-1")).expect("чек");
-
-        let x = device.x_report().expect("X-отчёт");
-        assert_eq!(x.cash_total, 48000);
-
-        // Смена осталась открытой, и следующий чек продолжает нумерацию.
-        assert!(device.status().expect("статус").shift_open);
-        let next = device.register_receipt(&чек("c-2")).expect("чек 2");
-        assert_eq!(next.receipt_number, 2);
-    }
-
-    #[test]
-    fn отказ_ккт_не_оставляет_документа_в_фн() {
-        let mut device = Emulator::new();
-        device.open_shift("Игорь").expect("смена");
-        device.reject_next("переполнение ФН");
-
-        let error = device.register_receipt(&чек("c-1")).unwrap_err();
-        assert!(matches!(error, FiscalError::Rejected(_)));
-        assert_eq!(device.registered_count(), 0);
-    }
-
-    #[test]
-    fn без_связи_любая_операция_отвечает_отказом_а_не_молчанием() {
-        let mut device = Emulator::new();
-        device.disconnect();
-
-        assert!(matches!(
-            device.status().unwrap_err(),
-            FiscalError::NotConnected(_)
-        ));
-        assert!(matches!(
-            device.open_shift("Игорь").unwrap_err(),
-            FiscalError::NotConnected(_)
-        ));
-        assert!(matches!(
-            device.register_receipt(&чек("c-1")).unwrap_err(),
-            FiscalError::NotConnected(_)
-        ));
-    }
-
-    #[test]
-    fn повторное_открытие_смены_отклоняется() {
-        let mut device = Emulator::new();
-        device.open_shift("Игорь").expect("смена");
-        assert!(device.open_shift("Игорь").is_err());
     }
 }

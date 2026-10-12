@@ -1,7 +1,10 @@
 import { useState } from "react";
+import type { UUID } from "@restopos/shared-types";
 import { cn } from "@restopos/ui-kit";
 import { useNavigation } from "../app/navigation";
 import { useSession } from "../app/session";
+import { fiscalPrintTest } from "../lib/fiscal";
+import { printTicket } from "../lib/printer";
 import {
   makeDevice,
   useDevices,
@@ -49,6 +52,39 @@ export function DevicesScreen() {
   const { staff } = useSession();
   const [editing, setEditing] = useState<Device | null>(null);
   const [adding, setAdding] = useState<DeviceKind | null>(null);
+  /** Устройство, по которому идёт тестовая печать. */
+  const [busyId, setBusyId] = useState<UUID | null>(null);
+  /** Устройство, у которого нажали «удалить» и ждут подтверждения. */
+  const [confirmingId, setConfirmingId] = useState<UUID | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const runTest = async (device: Device) => {
+    setBusyId(device.id);
+    try {
+      if (device.kind === "kkm") {
+        await fiscalPrintTest();
+        setNotice(`${device.name}: тестовая лента вышла`);
+      } else {
+        // У чекового принтера свой путь печати — марки идут ESC/POS
+        // в сокет, а не через драйвер ККТ.
+        await printTicket({
+          host: device.port,
+          port: 9100,
+          lines: [
+            { text: "RestoPOS — проверка связи", bold: true },
+            { text: device.name },
+          ],
+        });
+        setNotice(`${device.name}: тестовая лента вышла`);
+      }
+    } catch (error) {
+      setNotice(
+        `${device.name}: ${error instanceof Error ? error.message : "печать не прошла"}`,
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   if (editing) {
     return (
@@ -72,6 +108,16 @@ export function DevicesScreen() {
       <header className="shrink-0 border-b border-slate-800 bg-slate-900 px-5 py-3">
         <h1 className="text-lg font-black tracking-wide">Список устройств</h1>
       </header>
+
+      {notice && (
+        <button
+          type="button"
+          onClick={() => setNotice(null)}
+          className="shrink-0 border-b border-amber-900/60 bg-amber-950/40 px-5 py-3 text-left text-sm text-amber-300"
+        >
+          {notice} · нажмите, чтобы скрыть
+        </button>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full text-left">
@@ -139,12 +185,53 @@ export function DevicesScreen() {
                       >
                         {device.isRunning ? "■" : "▶"}
                       </button>
+                      {/* Тестовая печать — нефискальный документ, поэтому
+                          проходит и на ККТ с пустым накопителем. Это
+                          единственный способ отличить «нет связи»
+                          от «ФН не даёт пробить чек». */}
                       <button
                         type="button"
-                        disabled={!device.isRunning}
+                        disabled={
+                          !device.isRunning || device.kind === "scales" || busyId === device.id
+                        }
+                        onClick={() => runTest(device)}
                         className="min-h-14 w-16 rounded-lg border border-slate-700 bg-slate-800 text-xs font-bold text-slate-400 transition active:bg-slate-700 disabled:opacity-40"
                       >
-                        TEST
+                        {busyId === device.id ? "…" : "TEST"}
+                      </button>
+                      <button
+                        type="button"
+                        aria-label="Настроить"
+                        onClick={() => setEditing(device)}
+                        className="min-h-14 w-16 rounded-lg border border-slate-700 bg-slate-800 text-lg text-slate-300 transition active:bg-slate-700"
+                      >
+                        ⚙
+                      </button>
+                      {/*
+                        Удаление в два касания, а не сразу и не через
+                        системный confirm: снесённая ККМ уводит кассу
+                        в нефискальный режим молча, а модальное окно
+                        на сенсорном экране перекрывает пол-таблицы.
+                      */}
+                      <button
+                        type="button"
+                        aria-label="Удалить устройство"
+                        onClick={() =>
+                          confirmingId === device.id
+                            ? remove(device.id)
+                            : setConfirmingId(device.id)
+                        }
+                        onBlur={() =>
+                          setConfirmingId((id) => (id === device.id ? null : id))
+                        }
+                        className={cn(
+                          "min-h-14 rounded-lg border text-sm font-bold transition active:scale-95",
+                          confirmingId === device.id
+                            ? "w-28 border-rose-700 bg-rose-600 text-white"
+                            : "w-16 border-slate-700 bg-slate-800 text-slate-400",
+                        )}
+                      >
+                        {confirmingId === device.id ? "Удалить?" : "✕"}
                       </button>
                     </div>
                   </td>
@@ -355,6 +442,19 @@ function DeviceCard({
 
               {draft.kind === "kkm" && (
                 <>
+                  {/*
+                    Выключается там, где касса печатает, но фискализировать
+                    нечем: ФН исчерпан, просрочен или ККТ не зарегистрирована.
+                    Тогда расчёт идёт без чека, а печать марок и логотипа
+                    продолжает работать — накопитель в ней не участвует.
+                  */}
+                  <ToggleTile
+                    label="Пробивать фискальные чеки"
+                    checked={draft.fiscalEnabled}
+                    onToggle={() =>
+                      patch({ fiscalEnabled: !draft.fiscalEnabled })
+                    }
+                  />
                   <FieldTile
                     label="Номер кассы"
                     value={String(draft.cashRegisterNumber)}
@@ -388,11 +488,6 @@ function DeviceCard({
                     onToggle={() =>
                       patch({ blockWhenDrawerOpen: !draft.blockWhenDrawerOpen })
                     }
-                  />
-                  <FieldTile
-                    label="Символов в строке"
-                    value={String(draft.charsPerLine)}
-                    onChange={(v) => patch({ charsPerLine: Number(v) || 30 })}
                   />
                 </>
               )}

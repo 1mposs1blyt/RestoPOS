@@ -10,7 +10,32 @@ export interface PinPadProps {
    * и очищается. Возвращать сам результат проверки наружу не нужно.
    */
   onSubmit: (pin: string) => void | Promise<void>;
+  /** Длина, на которой пин уходит на проверку сам. */
   length?: number;
+  /**
+   * До скольки символов можно продолжать набор.
+   *
+   * По умолчанию равен `length` — обычный пин сотрудника ровно четыре цифры
+   * и длиннее не бывает. Больше нужно там, где рядом с четырёхзначными
+   * пинами живёт длинный код: сервисный вход техподдержки.
+   */
+  maxLength?: number;
+  /**
+   * Набранное **может оказаться началом** более длинного кода.
+   *
+   * Без этого длинный код ввести невозможно в принципе: первые четыре
+   * символа `041978` — это `0419`, панель отправила бы их на проверку,
+   * получила отказ и очистила поле. Проверка синхронная и локальная:
+   * ходить в сеть на каждый символ нельзя.
+   */
+  mayContinue?: (pin: string) => boolean;
+  /**
+   * Набранное — законченный длинный код, проверять прямо сейчас.
+   *
+   * Тоже локально и синхронно. Сам факт совпадения решает вызывающий,
+   * панель только спрашивает после каждого символа.
+   */
+  accepts?: (pin: string) => boolean;
   /** Текст ошибки под точками (например, ответ сервера). */
   error?: string | null;
   /** Слушать физическую цифровую клавиатуру терминала. По умолчанию — да. */
@@ -24,10 +49,14 @@ const INVALID_HOLD_MS = 600;
 export function PinPad({
   onSubmit,
   length = 4,
+  maxLength,
+  mayContinue,
+  accepts,
   error,
   listenPhysicalKeyboard = true,
   className,
 }: PinPadProps) {
+  const limit = Math.max(maxLength ?? length, length);
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
   const [invalid, setInvalid] = useState(false);
@@ -78,10 +107,23 @@ export function PinPad({
         return;
       }
 
-      if (valueRef.current.length >= length) return;
+      if (valueRef.current.length >= limit) return;
       const next = valueRef.current + key;
       setPin(next);
-      if (next.length < length) return;
+
+      /*
+       * Когда отправлять на проверку.
+       *
+       * Законченный длинный код — сразу. Иначе на своей штатной длине,
+       * но только если набранное не может быть началом длинного:
+       * `0419` — это и «неверный пин сотрудника», и первые четыре символа
+       * сервисного кода, и отправив их, мы очистили бы поле на полпути.
+       */
+      const done = accepts?.(next) === true;
+      if (!done) {
+        if (next.length !== length) return;
+        if (mayContinue?.(next) === true) return;
+      }
 
       setBusy(true);
       void (async () => {
@@ -101,7 +143,7 @@ export function PinPad({
         }
       })();
     },
-    [busy, length, setPin, delay],
+    [busy, length, limit, mayContinue, accepts, setPin, delay],
   );
 
   useEffect(() => {
@@ -122,7 +164,14 @@ export function PinPad({
 
   return (
     <div className={cn("flex flex-col items-center gap-6", className)}>
-      <PinDots filled={value.length} length={length} invalid={invalid} />
+      {/* Точек столько, сколько символов уже есть: длинный код набирается
+          редко, и держать под него пустой ряд из двенадцати кружков
+          значило бы каждый день пугать кассира чужой длиной пина. */}
+      <PinDots
+        filled={value.length}
+        length={Math.max(length, value.length)}
+        invalid={invalid}
+      />
 
       {/* Место под ошибку зарезервировано всегда — иначе клавиатура прыгает */}
       <p

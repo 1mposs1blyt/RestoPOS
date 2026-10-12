@@ -7,21 +7,6 @@
   ],
   "permissions": [
     "core:default",
-    "opener:default",
-    {
-      "identifier": "shell:allow-execute",
-      "allow": [
-        {
-          "name": "run-atol-ctrl",
-          "cmd": "C:\\Program Files\\ATOL\\Drivers10\\KKT\\bin\\fptr10_t.exe",
-          "args": true
-        },
-        {
-          "name": "run-powershell",
-          "cmd": "powershell",
-          "args": true
-        }
-      ]
-    }
+    "opener:default"
   ]
 }

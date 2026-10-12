@@ -27,7 +27,9 @@ export default defineConfig(async () => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || false,
+    // `false` у Vite означает «слушать localhost», а Node резолвит его
+    // в ::1 и биндится только туда. IPv4-петлю задаём явно.
+    host: host || "127.0.0.1",
     hmr: host
       ? {
           protocol: "ws",

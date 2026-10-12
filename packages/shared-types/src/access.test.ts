@@ -8,6 +8,7 @@ import {
   isOverridable,
   permissionsOf,
 } from "./access";
+import type { Permission } from "./access";
 import type { StaffRole } from "./common";
 
 /**
@@ -75,13 +76,29 @@ describe("официант и кассир", () => {
 });
 
 describe("роль support", () => {
-  it("имеет ровно одно право", () => {
-    // Инженер вендора с правом сторно в чужой кассе — это дыра,
-    // а не удобство.
-    expect([...permissionsOf("support")]).toEqual(["terminal.service"]);
+  it("держит только настройку железа и ничего больше", () => {
+    /*
+     * Оба права — про оборудование: сервисный экран терминала и станции
+     * приготовления с их выводами (экраны, принтеры). Ни заказов, ни денег,
+     * ни персонала: инженер вендора с правом сторно в чужой кассе — это дыра,
+     * а не удобство. Тест перечисляет права поимённо намеренно: добавить
+     * сюда третье молча не выйдет.
+     */
+    expect([...permissionsOf("support")].sort()).toEqual([
+      "station.manage",
+      "terminal.service",
+    ]);
   });
 
   it("сервисное право не выдано никому другому", () => {
+    /*
+     * В том числе менеджеру. Сервисный экран — инструмент вендора, а не
+     * заведения: тип терминала, диагностика и сброс состояния терминала
+     * менеджеру не нужны и в его картине мира не существуют.
+     *
+     * Вход техподдержки при этом не зависит от узла (`session-source.ts`),
+     * поэтому «иначе до настройки никто не доберётся» здесь не аргумент.
+     */
     for (const role of CONTRACT_ROLES) {
       if (role === "support") continue;
       expect(permissionsOf(role).has("terminal.service")).toBe(false);
@@ -139,11 +156,18 @@ describe("подтверждение старшим", () => {
 });
 
 describe("менеджер", () => {
-  it("может всё, кроме сервисного экрана", () => {
+  it("может всё, кроме настройки оборудования", () => {
+    /*
+     * Оборудование — не его забота: сервисный экран и станции с их выводами
+     * (адреса принтеров, порты, тестовая печать) настраивают один раз при
+     * установке кассы, и это работа вендора. Всё остальное по заведению —
+     * зал, меню, персонал, склад, отчёты, подтверждения — его.
+     */
+    const вендорские: Permission[] = ["terminal.service", "station.manage"];
     const manager = permissionsOf("manager");
+
     for (const permission of CONTRACT_PERMISSIONS) {
-      if (permission === "terminal.service") continue;
-      expect(manager.has(permission)).toBe(true);
+      expect(manager.has(permission)).toBe(!вендорские.includes(permission));
     }
   });
 });

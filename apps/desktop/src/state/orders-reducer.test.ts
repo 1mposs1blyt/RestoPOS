@@ -13,8 +13,10 @@ import {
  * или дорого стоит: задвоение позиции от двойного касания, потерянная позиция
  * при сторно, вечно висящий тикет станции без экрана.
  *
- * Станции берутся из демо-меню (`state/menu.ts`): «Борщ» готовится на кухне,
- * «Морс клюквенный» — на баре.
+ * Станцию позиции редьюсер спрашивает у `stationOf` из самого действия,
+ * а не у меню: меню приезжает с узла, а редьюсер обязан оставаться чистым.
+ * Раскладка ниже повторяет демо-каталог — «Борщ» на кухне, «Морс» на баре, —
+ * но теперь это видно прямо в тесте, а не подразумевается.
  */
 
 const SHIFT: UUID = "shift-1";
@@ -183,7 +185,9 @@ describe("отправка на кухню", () => {
     const next = reducer(state, {
       type: "order/send",
       orderId: "order-1",
-      autoReadyStationIds: [],
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
+      screenStationIds: [KITCHEN, BAR],
     });
     expect(next.items["item-1"].status).toBe("cooking");
     expect(next.items["item-2"].status).toBe("cooking");
@@ -195,9 +199,28 @@ describe("отправка на кухню", () => {
     const next = reducer(state, {
       type: "order/send",
       orderId: "order-1",
-      autoReadyStationIds: [BAR],
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
+      screenStationIds: [KITCHEN],
     });
     expect(next.items["item-1"].status).toBe("cooking");
+    expect(next.items["item-2"].status).toBe("ready");
+  });
+
+  it("считает готовой позицию незнакомой станции", () => {
+    /*
+     * Станция приезжает с меню узла и в справочнике терминала её может
+     * не быть вовсе. Пока авто-готовность считалась от списка «станций
+     * без экрана», такая позиция уходила в `cooking` и висела там навсегда:
+     * экрана у неё нет, отметить готовность некому.
+     */
+    const next = reducer(state, {
+      type: "order/send",
+      orderId: "order-1",
+      stationOf: () => "88888888-8888-8888-8888-888888888881",
+      screenStationIds: [KITCHEN, BAR],
+    });
+    expect(next.items["item-1"].status).toBe("ready");
     expect(next.items["item-2"].status).toBe("ready");
   });
 
@@ -206,7 +229,9 @@ describe("отправка на кухню", () => {
     const sent = reducer(state, {
       type: "order/send",
       orderId: "order-1",
-      autoReadyStationIds: [],
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
+      screenStationIds: [KITCHEN, BAR],
     });
     const ready = reducer(sent, {
       type: "item/status",
@@ -216,7 +241,9 @@ describe("отправка на кухню", () => {
     const again = reducer(ready, {
       type: "order/send",
       orderId: "order-1",
-      autoReadyStationIds: [],
+      stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
+      screenStationIds: [KITCHEN, BAR],
     });
     expect(again).toBe(ready);
   });
@@ -227,7 +254,9 @@ describe("отправка на кухню", () => {
       reducer(empty, {
         type: "order/send",
         orderId: "order-1",
-        autoReadyStationIds: [KITCHEN],
+        stationOf: (menuItemId) =>
+        menuItemId === "item-mors" ? BAR : KITCHEN,
+        screenStationIds: [KITCHEN],
       }),
     ).toBe(empty);
   });
@@ -295,6 +324,29 @@ describe("деление блюда", () => {
     expect(next.items["item-1"].status).toBe("split");
     expect(next.items.a.quantity).toBe(0.5);
     expect(next.items.b.quantity).toBe(0.5);
+  });
+
+  it("доли наследуют цену исходной позиции", () => {
+    /*
+     * Цена — снимок на момент добавления (`lib/order-price.ts`). Потеряв её
+     * при делении, доли считались бы по текущему меню: блюдо, подорожавшее
+     * между заказом и делением счёта, подорожало бы и для гостя, который
+     * его уже съел.
+     */
+    const withPrice: OrdersState = {
+      ...served,
+      items: { "item-1": item({ status: "served", price: "420.00" }) },
+    };
+
+    const next = reducer(withPrice, {
+      type: "item/split",
+      itemId: "item-1",
+      parts: [0.5, 0.5],
+      ids: ["a", "b"],
+    });
+
+    expect(next.items.a.price).toBe("420.00");
+    expect(next.items.b.price).toBe("420.00");
   });
 
   it("доли ссылаются на исходную позицию", () => {
