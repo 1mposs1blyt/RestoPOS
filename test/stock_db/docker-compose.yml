@@ -13,6 +13,21 @@ services:
       - ./01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
       - stock-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stock -d stock"]
+      interval: 3s
+      retries: 20
+
+  stock-api:
+    build: ../server               # папка с проектом лежит рядом с этой
+    container_name: stock-api
+    environment:
+      ConnectionStrings__Stock: "Host=stock-db;Port=5432;Database=stock;Username=stock;Password=stock_dev"
+    ports:
+      - "8080:8080"
+    depends_on:
+      stock-db:
+        condition: service_healthy
 
 volumes:
   stock-data:
