@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Склад — тестовый пульт</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Golos+Text:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #F3F5F4;
+  --surface: #FFFFFF;
+  --ink: #17201C;
+  --muted: #5D6B65;
+  --line: #D6DDD9;
+  --side: #1E3A32;
+  --side-ink: #E6EEEA;
+  --side-muted: #9FB5AB;
+  --accent: #B7791F;
+  --accent-ink: #FFFFFF;
+  --pos: #2E7D4F;
+  --neg: #B42318;
+  --hover: #EEF2F0;
+  --focus: #B7791F;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121816;
+    --surface: #1A2320;
+    --ink: #E4ECE8;
+    --muted: #93A39C;
+    --line: #2C3833;
+    --side: #0F1F1A;
+    --side-ink: #E4ECE8;
+    --side-muted: #7F978C;
+    --accent: #E0A33A;
+    --accent-ink: #1A1206;
+    --pos: #5CC38A;
+    --neg: #F07167;
+    --hover: #212C28;
+    --focus: #E0A33A;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: "Golos Text", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-size: 15px; line-height: 1.45;
+  background: var(--bg); color: var(--ink);
+  display: grid; grid-template-columns: 232px 1fr; min-height: 100vh;
+}
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* ---------- боковое меню ---------- */
+nav.side { background: var(--side); color: var(--side-ink); padding: 22px 14px; }
+nav.side h1 { font-size: 19px; font-weight: 600; margin: 0 10px 4px; }
+nav.side p { color: var(--side-muted); font-size: 13px; margin: 0 10px 22px; }
+nav.side a {
+  display: block; color: var(--side-ink); text-decoration: none;
+  padding: 8px 10px; border-radius: 6px; margin-bottom: 2px;
+}
+nav.side a:hover { background: rgba(255,255,255,.07); }
+nav.side a.active { background: rgba(255,255,255,.13); font-weight: 500; }
+nav.side .group { color: var(--side-muted); font-size: 13px; margin: 18px 10px 6px; }
+nav.side .swagger { margin-top: 26px; color: var(--side-muted); font-size: 13px; }
+
+/* ---------- основная часть ---------- */
+main { padding: 26px 32px 60px; min-width: 0; }
+main h2 { font-size: 24px; font-weight: 600; margin: 0 0 4px; }
+main .lead { color: var(--muted); margin: 0 0 20px; max-width: 70ch; }
+h3 { font-size: 16px; font-weight: 600; margin: 24px 0 10px; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 16px; }
+label.f { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+input, select, textarea {
+  font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; min-width: 0;
+}
+input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--accent); }
+button {
+  font: inherit; cursor: pointer; border-radius: 6px; padding: 7px 14px;
+  border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+}
+button:hover { background: var(--hover); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 500; }
+button.primary:hover { filter: brightness(1.06); }
+button.danger { color: var(--neg); }
+button.link { border: none; background: none; padding: 4px 6px; color: var(--muted); }
+button:disabled { opacity: .5; cursor: default; }
+
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; background: var(--surface); }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-weight: 500; color: var(--muted); font-size: 13px; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--hover); }
+tr.selected td { background: var(--hover); }
+.neg { color: var(--neg); }
+.pos { color: var(--pos); }
+.muted { color: var(--muted); }
+.empty { color: var(--muted); padding: 22px 4px; }
+
+/* Штампы статуса — как в iiko: черновик синим, проведённый чёрным, удалённый зачёркнут */
+.stamp {
+  display: inline-block; font-size: 12.5px; font-weight: 500; padding: 1px 9px;
+  border-radius: 4px; border: 1.5px solid currentColor;
+}
+.stamp.draft { color: var(--muted); border-style: dashed; }
+.stamp.posted { color: var(--ink); }
+.stamp.deleted { color: var(--muted); text-decoration: line-through; border-color: transparent; }
+
+/* Документы: список слева, карточка справа */
+.split { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 20px; align-items: start; }
+.doc-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; flex-wrap: wrap; }
+.doc-head h3 { margin: 0; font-size: 18px; }
+dl.meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 14px 0 0; font-size: 14px; }
+dl.meta dt { color: var(--muted); }
+dl.meta dd { margin: 0; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.explain { color: var(--muted); font-size: 13.5px; margin: 6px 0 10px; max-width: 70ch; }
+
+/* Формы */
+.grid-form { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.lines td { padding: 5px 6px; }
+.lines input, .lines select { width: 100%; }
+.lines input.n { width: 110px; text-align: right; }
+.check-row { display: flex; align-items: center; gap: 10px; margin: 10px 0; }
+
+.ok-line { margin-top: 14px; font-size: 14px; }
+
+/* Сообщения */
+#toasts { position: fixed; right: 18px; bottom: 18px; display: flex; flex-direction: column; gap: 8px; z-index: 10; max-width: min(460px, calc(100vw - 36px)); }
+.toast {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  border-left: 4px solid var(--pos); border-radius: 8px; padding: 10px 14px;
+  box-shadow: 0 6px 24px rgba(0,0,0,.18); font-size: 14px;
+}
+.toast.err { border-left-color: var(--neg); }
+.toast b { display: block; margin-bottom: 2px; }
+
+@media (max-width: 1100px) { .split { grid-template-columns: 1fr; } }
+@media (max-width: 760px) {
+  body { grid-template-columns: 1fr; }
+  nav.side { padding: 12px; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+  nav.side h1 { width: 100%; margin-bottom: 8px; }
+  nav.side p, nav.side .group { display: none; }
+  nav.side a { margin: 0; }
+  main { padding: 18px 14px 60px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: rise .18s ease-out; }
+  @keyframes rise { from { transform: translateY(8px); opacity: 0; } }
+}
+</style>
+</head>
+<body>
+
+<nav class="side" aria-label="Разделы">
+  <h1>Склад</h1>
+  <p>Тестовый пульт учёта</p>
+  <a href="#balances">Остатки</a>
+  <a href="#documents">Документы</a>
+  <a href="#new-document">Новый документ</a>
+  <a href="#card">Карточка товара</a>
+  <div class="group">Справочники</div>
+  <a href="#products">Номенклатура</a>
+  <a href="#recipes">Техкарты</a>
+  <a href="#catalogs">Склады и поставщики</a>
+  <div class="group">Система</div>
+  <a href="#settings">Настройки учёта</a>
+  <a class="swagger" href="/swagger" target="_blank" rel="noopener">Открыть Swagger</a>
+</nav>
+
+<main id="view" tabindex="-1"></main>
+<div id="toasts" aria-live="polite"></div>
+
+<script>
+// =====================================================================
+//  Подписи
+// =====================================================================
+const DOC_TYPES = {
+  incoming_invoice: 'Приходная накладная',
+  sales_act: 'Акт реализации',
+  writeoff_act: 'Акт списания',
+  transfer: 'Перемещение',
+  inventory: 'Инвентаризация'
+};
+const PRODUCT_TYPES = { goods: 'Товар', dish: 'Блюдо', prepared: 'Заготовка', service: 'Услуга' };
+const STATUSES = { draft: 'Черновик', posted: 'Проведён', deleted: 'Удалён' };
+
+// =====================================================================
+//  Общие помощники
+// =====================================================================
+const $ = (sel, root = document) => root.querySelector(sel);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+const qtyFmt = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 6 });
+const moneyFmt = new Intl.NumberFormat('ru-RU', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const minus = s => s.replace('-', '−');
+const qty = v => v == null ? '' : minus(qtyFmt.format(v));
+const money = v => v == null ? '—' : minus(moneyFmt.format(v));
+const signCls = v => v < 0 ? 'neg' : '';
+const when = iso => new Date(iso).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+const ruDate = d => d.split('-').reverse().join('.');   // "2026-10-12" -> "12.10.2026"
+const stamp = s => `<span class="stamp ${s}">${STATUSES[s] ?? s}</span>`;
+
+// Текущее время для <input type="datetime-local">
+function nowLocal() {
+  const d = new Date();
+  d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+  return d.toISOString().slice(0, 16);
+}
+
+function toast(title, text, isError = false) {
+  const el = document.createElement('div');
+  el.className = 'toast' + (isError ? ' err' : '');
+  el.innerHTML = `<b>${esc(title)}</b>${esc(text ?? '')}`;
+  $('#toasts').append(el);
+  setTimeout(() => el.remove(), isError ? 9000 : 4000);
+}
+
+// Запрос к API. Ошибки учёта (400/404/409) показываются всплывашкой с текстом от сервера.
+async function api(method, url, body) {
+  const res = await fetch(url, {
+    method,
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  if (res.status === 204) return null;
+  const text = await res.text();
+  let data = null;
+  try { data = text ? JSON.parse(text) : null; } catch { data = { detail: text.slice(0, 300) }; }
+  if (!res.ok) {
+    let msg = data?.detail || data?.title || `Ошибка ${res.status}`;
+    if (data?.errors) msg += ': ' + Object.values(data.errors).flat().join('; ');
+    toast(res.status >= 500 ? 'Ошибка сервера' : 'Не получилось', msg, true);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+// Справочники держим в памяти, чтобы показывать имена вместо id
+const cache = { units: [], stores: [], suppliers: [], products: [], groups: [] };
+async function loadCache() {
+  [cache.units, cache.stores, cache.suppliers, cache.products, cache.groups] = await Promise.all([
+    api('GET', '/api/units'), api('GET', '/api/stores'), api('GET', '/api/suppliers'),
+    api('GET', '/api/products'), api('GET', '/api/product-groups')
+  ]);
+}
+const nameOf = (list, id) => list.find(x => x.id === id)?.name ?? '—';
+const options = (list, selected, empty) =>
+  (empty ? `<option value="">${esc(empty)}</option>` : '') +
+  list.map(x => `<option value="${x.id}" ${x.id === selected ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+const productOptions = (list, selected) =>
+  list.map(p => `<option value="${p.id}" ${p.id === selected ? 'selected' : ''}>${esc(p.name)} (${esc(p.unit)})</option>`).join('');
+
+// =====================================================================
+//  Роутинг по #адресу
+// =====================================================================
+const views = {};
+let selectedDocId = null;
+
+async function route() {
+  const [name, arg] = (location.hash.slice(1) || 'balances').split('/');
+  document.querySelectorAll('nav.side a').forEach(a => a.classList.toggle('active', a.getAttribute('href') === '#' + name));
+  const view = views[name] ?? views.balances;
+  try { await view(arg); } catch (e) { console.error(e); }
+}
+window.addEventListener('hashchange', route);
+
+// =====================================================================
+//  Остатки
+// =====================================================================
+views.balances = async () => {
+  const v = $('#view');
+  v.innerHTML = `
+    <h2>Остатки</h2>
+    <p class="lead">Сколько чего лежит на складах и по какой средней цене. Отрицательный остаток значит,
+      что по учёту потратили больше, чем пришло.</p>
+    <div class="toolbar">
+      <label class="f">Склад <select id="b-store">${options(cache.stores, null, 'Все склады')}</select></label>
+      <label class="f">На момент <input id="b-at" type="datetime-local"></label>
+      <button id="b-now">Сейчас</button>
+    </div>
+    <div class="scroll"><table id="b-table"></table></div>
+    <div id="b-check" class="ok-line muted"></div>`;
+
+  async function load() {
+    const store = $('#b-store').value;
+    const at = $('#b-at').value;
+    const qs = new URLSearchParams();
+    if (store) qs.set('storeId', store);
+    let url = '/api/stock/balances';
+    if (at) { url += '/at'; qs.set('at', new Date(at).toISOString()); }
+    const rows = await api('GET', `${url}?${qs}`);
+    $('#b-table').innerHTML = rows.length === 0
+      ? `<tr><td class="empty">Пока пусто — проведи приходную накладную.</td></tr>`
+      : `<tr><th>Склад</th><th>Товар</th><th class="num">Количество</th><th>Ед.</th>
+           <th class="num">Сумма, р.</th><th class="num">Средняя цена</th></tr>` +
+        rows.map(r => `<tr class="click" data-product="${r.productId}">
+          <td>${esc(r.store)}</td><td>${esc(r.product)}</td>
+          <td class="num ${signCls(r.quantity)}">${qty(r.quantity)}</td><td>${esc(r.unit)}</td>
+          <td class="num ${signCls(r.totalCost)}">${money(r.totalCost)}</td>
+          <td class="num">${money(r.avgCost)}</td></tr>`).join('');
+
+    const issues = await api('GET', '/api/stock/check');
+    $('#b-check').innerHTML = issues.length === 0
+      ? 'Сверка: остатки сходятся с движениями.'
+      : `<span class="neg">Сверка: ${issues.length} расхождений между остатками и движениями — это баг проведения.</span>`;
+  }
+
+  $('#b-store').onchange = load;
+  $('#b-at').onchange = load;
+  $('#b-now').onclick = () => { $('#b-at').value = ''; load(); };
+  $('#b-table').onclick = e => {
+    const tr = e.target.closest('tr[data-product]');
+    if (tr) location.hash = 'card/' + tr.dataset.product;
+  };
+  await load();
+};
+
+// =====================================================================
+//  Документы: список + карточка
+// =====================================================================
+views.documents = async (arg) => {
+  if (arg) selectedDocId = arg;
+  const v = $('#view');
+  v.innerHTML = `
+    <h2>Документы</h2>
+    <p class="lead">Черновик ничего не меняет на складе. Проведение создаёт движения и меняет остатки.</p>
+    <div class="toolbar">
+      <label class="f">Тип <select id="d-type"><option value="">Все типы</option>
+        ${Object.entries(DOC_TYPES).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+      <label class="f">Статус <select id="d-status"><option value="">Черновики и проведённые</option>
+        ${Object.entries(STATUSES).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+      <button class="primary" onclick="location.hash='new-document'">Новый документ</button>
+    </div>
+    <div class="split">
+      <div class="scroll"><table id="d-table"></table></div>
+      <div id="d-card"></div>
+    </div>`;
+
+  async function loadList() {
+    const qs = new URLSearchParams();
+    if ($('#d-type').value) qs.set('type', $('#d-type').value);
+    if ($('#d-status').value) qs.set('status', $('#d-status').value);
+    const docs = await api('GET', '/api/documents?' + qs);
+    $('#d-table').innerHTML = docs.length === 0
+      ? `<tr><td class="empty">Документов нет.</td></tr>`
+      : `<tr><th>Дата</th><th>Документ</th><th>Склад</th><th class="num">Сумма, р.</th><th>Статус</th></tr>` +
+        docs.map(d => `<tr class="click ${d.id === selectedDocId ? 'selected' : ''}" data-id="${d.id}">
+          <td>${when(d.docDate)}</td>
+          <td>${DOC_TYPES[d.type]} № ${esc(d.number)}</td>
+          <td>${esc(nameOf(cache.stores, d.storeId))}</td>
+          <td class="num">${money(d.totalAmount)}</td>
+          <td>${stamp(d.status)}</td></tr>`).join('');
+  }
+
+  $('#d-type').onchange = loadList;
+  $('#d-status').onchange = loadList;
+  $('#d-table').onclick = e => {
+    const tr = e.target.closest('tr[data-id]');
+    if (!tr) return;
+    selectedDocId = tr.dataset.id;
+    history.replaceState(null, '', '#documents/' + selectedDocId);
+    document.querySelectorAll('#d-table tr').forEach(r => r.classList.toggle('selected', r === tr));
+    showCard(selectedDocId);
+  };
+
+  await loadList();
+  if (selectedDocId) await showCard(selectedDocId);
+  else $('#d-card').innerHTML = `<div class="panel muted">Выбери документ в списке, чтобы увидеть строки и движения.</div>`;
+
+  async function showCard(id) {
+    const [d, moves] = await Promise.all([
+      api('GET', `/api/documents/${id}`),
+      api('GET', `/api/documents/${id}/movements`)
+    ]);
+    const meta = [
+      ['Дата', when(d.docDate)],
+      [d.type === 'transfer' ? 'Откуда' : 'Склад', nameOf(cache.stores, d.storeId)],
+      d.storeToId && ['Куда', nameOf(cache.stores, d.storeToId)],
+      d.supplierId && ['Поставщик', nameOf(cache.suppliers, d.supplierId)],
+      d.writeoffReason && ['Причина', d.writeoffReason],
+      d.comment && ['Комментарий', d.comment],
+      d.postedAt && ['Проведён', when(d.postedAt)]
+    ].filter(Boolean);
+
+    const qtyHead = d.type === 'inventory' ? 'Факт' : 'Количество';
+    $('#d-card').innerHTML = `
+      <div class="panel">
+        <div class="doc-head">
+          <div><h3>${DOC_TYPES[d.type]} № ${esc(d.number)}</h3></div>
+          ${stamp(d.status)}
+        </div>
+        <dl class="meta">${meta.map(([k, val]) => `<dt>${k}</dt><dd>${esc(val)}</dd>`).join('')}</dl>
+
+        <h3>Строки документа</h3>
+        <div class="scroll"><table>
+          <tr><th>Позиция</th><th class="num">${qtyHead}</th><th>Ед.</th><th class="num">Цена</th><th class="num">Сумма</th></tr>
+          ${d.items.map(i => `<tr><td>${esc(i.product)}</td><td class="num">${qty(i.quantity)}</td><td>${esc(i.unit)}</td>
+            <td class="num">${money(i.price)}</td><td class="num">${money(i.amount)}</td></tr>`).join('')}
+        </table></div>
+
+        <h3>Движения по складу</h3>
+        <p class="explain">${moves.length === 0
+          ? (d.status === 'posted'
+              ? 'Проведён, но движений нет — например, инвентаризация без расхождений.'
+              : 'Это черновик: движений нет, остатки он не трогает. Проведи, чтобы применить.')
+          : 'Что реально изменилось на складе. У продаж блюда разложены по техкарте на ингредиенты.'}</p>
+        ${moves.length ? `<div class="scroll"><table>
+          <tr><th>Склад</th><th>Товар</th><th class="num">Количество</th><th class="num">Себестоимость</th></tr>
+          ${moves.map(m => `<tr><td>${esc(nameOf(cache.stores, m.storeId))}</td><td>${esc(m.product)}</td>
+            <td class="num ${m.quantity < 0 ? 'neg' : 'pos'}">${m.quantity > 0 ? '+' : ''}${qty(m.quantity)}</td>
+            <td class="num">${money(m.costAmount)}</td></tr>`).join('')}
+        </table></div>` : ''}
+
+        <div class="actions" style="margin-top:18px">
+          ${d.status === 'draft' ? `<button class="primary" data-act="post">Провести</button>
+                                    <button class="danger" data-act="delete">Удалить черновик</button>` : ''}
+          ${d.status === 'posted' ? `<button data-act="unpost">Отменить проведение</button>` : ''}
+        </div>
+      </div>`;
+
+    $('#d-card').onclick = async e => {
+      const act = e.target.closest('button[data-act]')?.dataset.act;
+      if (!act) return;
+      e.target.disabled = true;
+      try {
+        if (act === 'post') { await api('POST', `/api/documents/${id}/post`); toast('Проведён', `${DOC_TYPES[d.type]} № ${d.number}`); }
+        if (act === 'unpost') { await api('POST', `/api/documents/${id}/unpost`); toast('Проведение отменено', 'Документ снова черновик'); }
+        if (act === 'delete') {
+          if (!confirm('Удалить черновик?')) { e.target.disabled = false; return; }
+          await api('DELETE', `/api/documents/${id}`); toast('Удалён', `${DOC_TYPES[d.type]} № ${d.number}`);
+          selectedDocId = null;
+        }
+      } catch { /* текст ошибки уже показан */ }
+      await views.documents(selectedDocId ?? undefined);
+    };
+  }
+};
+
+// =====================================================================
+//  Новый документ
+// =====================================================================
+views['new-document'] = async () => {
+  const v = $('#view');
+  v.innerHTML = `
+    <h2>Новый документ</h2>
+    <p class="lead">Сначала создаётся черновик. Можно сразу и провести — если проведение не пройдёт,
+      черновик всё равно останется в списке документов.</p>
+    <div class="panel">
+      <div class="grid-form">
+        <label class="f">Тип документа <select id="n-type">
+          ${Object.entries(DOC_TYPES).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+        <label class="f">Дата и время <input id="n-date" type="datetime-local" value="${nowLocal()}"></label>
+        <label class="f" id="n-store-l">Склад <select id="n-store">${options(cache.stores)}</select></label>
+        <label class="f" id="n-store-to-l">Склад-получатель <select id="n-store-to">${options(cache.stores)}</select></label>
+        <label class="f" id="n-supplier-l">Поставщик <select id="n-supplier">${options(cache.suppliers)}</select></label>
+        <label class="f" id="n-reason-l">Причина списания <input id="n-reason" placeholder="порча, бой..."></label>
+        <label class="f">Комментарий <input id="n-comment"></label>
+      </div>
+      <p class="explain" id="n-hint"></p>
+      <div class="scroll"><table class="lines" id="n-lines"></table></div>
+      <div class="actions" style="margin-top:10px">
+        <button id="n-add">Добавить строку</button>
+      </div>
+      <div class="actions" style="margin-top:20px">
+        <button class="primary" id="n-create-post">Создать и провести</button>
+        <button id="n-create">Создать черновик</button>
+      </div>
+    </div>`;
+
+  const HINTS = {
+    incoming_invoice: 'Товар пришёл от поставщика. Цена — закупочная, за единицу.',
+    sales_act: 'Продажи за смену. Блюда при проведении спишутся по техкарте.',
+    writeoff_act: 'Порча, бой, недостача. Уходить в минус по умолчанию нельзя.',
+    transfer: 'Перенос между складами. Себестоимость переезжает вместе с товаром.',
+    inventory: 'Пересчёт: укажи, сколько лежит по факту. Разница с учётом станет излишком или недостачей.'
+  };
+  let lines = [{}];
+
+  const type = () => $('#n-type').value;
+  const needsPrice = () => ['incoming_invoice', 'sales_act'].includes(type());
+  const productsFor = () => type() === 'sales_act'
+    ? cache.products.filter(p => p.type !== 'service')
+    : cache.products.filter(p => p.type === 'goods' || p.type === 'prepared' || (type() === 'writeoff_act' && p.type === 'dish'));
+
+  function renderLines() {
+    const prods = productsFor();
+    $('#n-lines').innerHTML = `<tr><th>Позиция</th><th>${type() === 'inventory' ? 'Факт' : 'Количество'}</th>
+        ${needsPrice() ? `<th>${type() === 'sales_act' ? 'Цена продажи' : 'Цена закупки'}</th>` : ''}<th></th></tr>` +
+      lines.map((l, i) => `<tr data-i="${i}">
+        <td><select data-f="productId">${productOptions(prods, l.productId)}</select></td>
+        <td><input class="n" data-f="quantity" type="number" step="any" min="0" value="${l.quantity ?? ''}"></td>
+        ${needsPrice() ? `<td><input class="n" data-f="price" type="number" step="any" min="0" value="${l.price ?? ''}"></td>` : ''}
+        <td><button class="link" data-del="${i}" aria-label="Удалить строку">Убрать</button></td></tr>`).join('');
+    // зафиксировать выбранный по умолчанию товар
+    document.querySelectorAll('#n-lines tr[data-i]').forEach(tr => {
+      lines[tr.dataset.i].productId = $('select', tr).value;
+    });
+  }
+
+  function renderType() {
+    const t = type();
+    $('#n-store-to-l').hidden = t !== 'transfer';
+    $('#n-supplier-l').hidden = t !== 'incoming_invoice';
+    $('#n-reason-l').hidden = t !== 'writeoff_act';
+    $('#n-store-l').firstChild.textContent = t === 'transfer' ? 'Откуда ' : 'Склад ';
+    $('#n-hint').textContent = HINTS[t];
+    renderLines();
+  }
+
+  $('#n-type').onchange = () => { lines = [{}]; renderType(); };
+  $('#n-lines').oninput = e => {
+    const tr = e.target.closest('tr[data-i]');
+    const f = e.target.dataset.f;
+    if (!tr || !f) return;
+    lines[tr.dataset.i][f] = f === 'productId' ? e.target.value : (e.target.value === '' ? undefined : Number(e.target.value));
+  };
+  $('#n-lines').onclick = e => {
+    const i = e.target.dataset.del;
+    if (i === undefined) return;
+    lines.splice(Number(i), 1);
+    if (lines.length === 0) lines.push({});
+    renderLines();
+  };
+  $('#n-add').onclick = () => { lines.push({}); renderLines(); };
+
+  async function create(andPost) {
+    const t = type();
+    const body = {
+      type: t,
+      docDate: new Date($('#n-date').value).toISOString(),
+      storeId: $('#n-store').value,
+      items: lines.filter(l => l.productId && l.quantity !== undefined).map(l => ({
+        productId: l.productId, quantity: l.quantity, ...(needsPrice() && l.price !== undefined ? { price: l.price } : {})
+      }))
+    };
+    if (t === 'transfer') body.storeToId = $('#n-store-to').value;
+    if (t === 'incoming_invoice') body.supplierId = $('#n-supplier').value;
+    if (t === 'writeoff_act' && $('#n-reason').value) body.writeoffReason = $('#n-reason').value;
+    if ($('#n-comment').value) body.comment = $('#n-comment').value;
+
+    let doc;
+    try { doc = await api('POST', '/api/documents', body); } catch { return; }
+    toast('Черновик создан', `${DOC_TYPES[t]} № ${doc.number}`);
+    if (andPost) {
+      try {
+        await api('POST', `/api/documents/${doc.id}/post`);
+        toast('Проведён', `${DOC_TYPES[t]} № ${doc.number}`);
+      } catch { /* остался черновиком, ошибка уже показана */ }
+    }
+    location.hash = 'documents/' + doc.id;
+  }
+  $('#n-create').onclick = () => create(false);
+  $('#n-create-post').onclick = () => create(true);
+
+  renderType();
+};
+
+// =====================================================================
+//  Карточка товара: все движения с нарастающим остатком
+// =====================================================================
+views.card = async (productId) => {
+  const goods = cache.products.filter(p => p.type !== 'service');
+  productId = productId || goods[0]?.id;
+  const v = $('#view');
+  v.innerHTML = `
+    <h2>Карточка товара</h2>
+    <p class="lead">Все движения по товару по порядку. Последняя строка «Остаток после» и есть текущий остаток.</p>
+    <div class="toolbar">
+      <label class="f">Товар <select id="c-product">${productOptions(goods, productId)}</select></label>
+      <label class="f">Склад <select id="c-store">${options(cache.stores, null, 'Все склады')}</select></label>
+    </div>
+    <div class="scroll"><table id="c-table"></table></div>`;
+
+  async function load() {
+    const qs = new URLSearchParams({ productId: $('#c-product').value });
+    if ($('#c-store').value) qs.set('storeId', $('#c-store').value);
+    const moves = await api('GET', '/api/stock/movements?' + qs);
+    let q = 0, c = 0;
+    $('#c-table').innerHTML = moves.length === 0
+      ? `<tr><td class="empty">По этому товару движений ещё не было.</td></tr>`
+      : `<tr><th>Дата</th><th>Документ</th><th>Склад</th><th class="num">Движение</th>
+           <th class="num">Себестоимость</th><th class="num">Остаток после</th><th class="num">Сумма после</th></tr>` +
+        moves.map(m => {
+          q += m.quantity; c += m.costAmount;
+          return `<tr class="click" data-doc="${m.documentId}">
+            <td>${when(m.movementDate)}</td>
+            <td>${DOC_TYPES[m.documentType]} № ${esc(m.documentNumber)}</td>
+            <td>${esc(nameOf(cache.stores, m.storeId))}</td>
+            <td class="num ${m.quantity < 0 ? 'neg' : 'pos'}">${m.quantity > 0 ? '+' : ''}${qty(m.quantity)}</td>
+            <td class="num">${money(m.costAmount)}</td>
+            <td class="num ${signCls(q)}">${qty(q)}</td>
+            <td class="num ${signCls(c)}">${money(c)}</td></tr>`;
+        }).join('');
+  }
+  $('#c-product').onchange = () => { history.replaceState(null, '', '#card/' + $('#c-product').value); load(); };
+  $('#c-store').onchange = load;
+  $('#c-table').onclick = e => {
+    const tr = e.target.closest('tr[data-doc]');
+    if (tr) location.hash = 'documents/' + tr.dataset.doc;
+  };
+  await load();
+};
+
+// =====================================================================
+//  Номенклатура
+// =====================================================================
+views.products = async () => {
+  const v = $('#view');
+  v.innerHTML = `
+    <h2>Номенклатура</h2>
+    <p class="lead">Товары — то, что покупаешь и списываешь. Блюда и заготовки списываются по техкарте.</p>
+    <div class="scroll"><table>
+      <tr><th>Артикул</th><th>Название</th><th>Тип</th><th>Ед.</th><th>Списание</th><th class="num">Цена продажи</th></tr>
+      ${cache.products.map(p => `<tr><td class="muted">${esc(p.article)}</td><td>${esc(p.name)}</td>
+        <td>${PRODUCT_TYPES[p.type]}</td><td>${esc(p.unit)}</td>
+        <td>${p.writeoffMethod === 'self' ? 'само себя' : 'по техкарте'}</td>
+        <td class="num">${money(p.salePrice)}</td></tr>`).join('')}
+    </table></div>
+
+    <h3>Добавить позицию</h3>
+    <div class="panel">
+      <div class="grid-form">
+        <label class="f">Название <input id="p-name"></label>
+        <label class="f">Тип <select id="p-type">
+          ${Object.entries(PRODUCT_TYPES).map(([k, t]) => `<option value="${k}">${t}</option>`).join('')}</select></label>
+        <label class="f">Единица <select id="p-unit">${options(cache.units)}</select></label>
+        <label class="f">Группа <select id="p-group">${options(cache.groups, null, 'Без группы')}</select></label>
+        <label class="f">Цена продажи <input id="p-price" type="number" step="any" min="0"></label>
+      </div>
+      <button class="primary" id="p-save">Добавить</button>
+    </div>`;
+
+  $('#p-save').onclick = async () => {
+    const body = {
+      name: $('#p-name').value, type: $('#p-type').value, unitId: $('#p-unit').value,
+      groupId: $('#p-group').value || null,
+      salePrice: $('#p-price').value === '' ? null : Number($('#p-price').value)
+    };
+    if (!body.name.trim()) return toast('Не получилось', 'Укажи название', true);
+    try { await api('POST', '/api/products', body); } catch { return; }
+    toast('Добавлено', body.name);
+    await loadCache();
+    views.products();
+  };
+};
+
+// =====================================================================
+//  Техкарты
+// =====================================================================
+views.recipes = async (productId) => {
+  const dishes = cache.products.filter(p => p.type === 'dish' || p.type === 'prepared');
+  const ingredients = cache.products.filter(p => p.type === 'goods' || p.type === 'prepared');
+  productId = productId || dishes[0]?.id;
+  const v = $('#view');
+  if (!productId) {
+    v.innerHTML = `<h2>Техкарты</h2><p class="lead">Сначала заведи блюдо в номенклатуре.</p>`;
+    return;
+  }
+  const recipes = await api('GET', `/api/products/${productId}/recipes`);
+  let lines = [{}];
+
+  v.innerHTML = `
+    <h2>Техкарты</h2>
+    <p class="lead">Из чего состоит блюдо. Версии действуют по датам: продажа списывается по той,
+      что действовала на дату документа.</p>
+    <div class="toolbar">
+      <label class="f">Блюдо <select id="r-product">${productOptions(dishes, productId)}</select></label>
+    </div>
+    ${recipes.length === 0 ? `<div class="panel muted">У блюда нет техкарты — при продаже спишется само блюдо.</div>` : ''}
+    ${recipes.map(r => `
+      <h3>С ${ruDate(r.dateFrom)} ${r.dateTo ? 'по ' + ruDate(r.dateTo) : '— действует сейчас'}</h3>
+      <p class="explain">Расписана на ${qty(r.portions)} порц.</p>
+      <div class="scroll"><table>
+        <tr><th>Ингредиент</th><th class="num">Брутто</th><th>Ед.</th><th class="num">Потери холод., %</th>
+          <th class="num">Потери гор., %</th><th class="num">Нетто</th></tr>
+        ${r.items.map(i => `<tr><td>${esc(i.ingredient)}</td><td class="num">${qty(i.gross)}</td><td>${esc(i.unit)}</td>
+          <td class="num">${qty(i.coldLossPct)}</td><td class="num">${qty(i.hotLossPct)}</td><td class="num">${qty(i.net)}</td></tr>`).join('')}
+      </table></div>`).join('')}
+
+    <h3>Новая версия</h3>
+    <div class="panel">
+      <p class="explain">Текущая версия автоматически закроется днём раньше даты начала новой.</p>
+      <div class="grid-form">
+        <label class="f">Действует с <input id="r-from" type="date" value="${nowLocal().slice(0, 10)}"></label>
+        <label class="f">На сколько порций <input id="r-portions" type="number" step="any" min="0" value="1"></label>
+      </div>
+      <div class="scroll"><table class="lines" id="r-lines"></table></div>
+      <div class="actions" style="margin-top:10px"><button id="r-add">Добавить ингредиент</button></div>
+      <div class="actions" style="margin-top:18px"><button class="primary" id="r-save">Сохранить версию</button></div>
+    </div>`;
+
+  function renderLines() {
+    $('#r-lines').innerHTML = `<tr><th>Ингредиент</th><th>Брутто</th><th>Потери холод., %</th><th>Потери гор., %</th><th></th></tr>` +
+      lines.map((l, i) => `<tr data-i="${i}">
+        <td><select data-f="ingredientId">${productOptions(ingredients, l.ingredientId)}</select></td>
+        <td><input class="n" data-f="gross" type="number" step="any" min="0" value="${l.gross ?? ''}"></td>
+        <td><input class="n" data-f="coldLossPct" type="number" step="any" min="0" value="${l.coldLossPct ?? 0}"></td>
+        <td><input class="n" data-f="hotLossPct" type="number" step="any" min="0" value="${l.hotLossPct ?? 0}"></td>
+        <td><button class="link" data-del="${i}">Убрать</button></td></tr>`).join('');
+    document.querySelectorAll('#r-lines tr[data-i]').forEach(tr => {
+      lines[tr.dataset.i].ingredientId = $('select', tr).value;
+    });
+  }
+  $('#r-lines').oninput = e => {
+    const tr = e.target.closest('tr[data-i]'); const f = e.target.dataset.f;
+    if (!tr || !f) return;
+    lines[tr.dataset.i][f] = f === 'ingredientId' ? e.target.value : Number(e.target.value);
+  };
+  $('#r-lines').onclick = e => {
+    const i = e.target.dataset.del; if (i === undefined) return;
+    lines.splice(Number(i), 1); if (lines.length === 0) lines.push({}); renderLines();
+  };
+  $('#r-add').onclick = () => { lines.push({}); renderLines(); };
+  $('#r-product').onchange = () => { location.hash = 'recipes/' + $('#r-product').value; };
+  $('#r-save').onclick = async () => {
+    const body = {
+      dateFrom: $('#r-from').value,
+      portions: Number($('#r-portions').value || 1),
+      items: lines.filter(l => l.ingredientId && l.gross > 0).map(l => ({
+        ingredientId: l.ingredientId, gross: l.gross, coldLossPct: l.coldLossPct ?? 0, hotLossPct: l.hotLossPct ?? 0
+      }))
+    };
+    try { await api('POST', `/api/products/${productId}/recipes`, body); } catch { return; }
+    toast('Сохранено', 'Новая версия техкарты');
+    views.recipes(productId);
+  };
+  renderLines();
+};
+
+// =====================================================================
+//  Склады и поставщики
+// =====================================================================
+views.catalogs = async () => {
+  const v = $('#view');
+  v.innerHTML = `
+    <h2>Склады и поставщики</h2>
+    <p class="lead">Минимальные справочники, без которых не создать документ.</p>
+    <div class="split">
+      <div class="panel">
+        <h3 style="margin-top:0">Склады</h3>
+        <table>${cache.stores.map(s => `<tr><td>${esc(s.name)}</td></tr>`).join('')}</table>
+        <div class="toolbar" style="margin-top:12px">
+          <label class="f">Новый склад <input id="s-name" placeholder="Бар"></label>
+          <button id="s-add">Добавить</button>
+        </div>
+      </div>
+      <div class="panel">
+        <h3 style="margin-top:0">Поставщики</h3>
+        <table>${cache.suppliers.map(s => `<tr><td>${esc(s.name)}</td><td class="muted">${esc(s.inn ?? '')}</td></tr>`).join('')}</table>
+        <div class="toolbar" style="margin-top:12px">
+          <label class="f">Новый поставщик <input id="sp-name"></label>
+          <label class="f">ИНН <input id="sp-inn"></label>
+          <button id="sp-add">Добавить</button>
+        </div>
+      </div>
+    </div>`;
+
+  $('#s-add').onclick = async () => {
+    const name = $('#s-name').value.trim(); if (!name) return;
+    try { await api('POST', '/api/stores', { name }); } catch { return; }
+    toast('Добавлено', name); await loadCache(); views.catalogs();
+  };
+  $('#sp-add').onclick = async () => {
+    const name = $('#sp-name').value.trim(); if (!name) return;
+    try { await api('POST', '/api/suppliers', { name, inn: $('#sp-inn').value || null }); } catch { return; }
+    toast('Добавлено', name); await loadCache(); views.catalogs();
+  };
+};
+
+// =====================================================================
+//  Настройки
+// =====================================================================
+views.settings = async () => {
+  const s = await api('GET', '/api/settings');
+  const v = $('#view');
+  v.innerHTML = `
+    <h2>Настройки учёта</h2>
+    <p class="lead">То же, что «Настройки учета» в iikoOffice, только самое нужное.</p>
+    <div class="panel" style="max-width:640px">
+      <label class="check-row"><input type="checkbox" id="st-neg-sales" ${s.allowNegativeSales ? 'checked' : ''}>
+        Продажи могут уводить остаток в минус</label>
+      <label class="check-row"><input type="checkbox" id="st-neg-other" ${s.allowNegativeOther ? 'checked' : ''}>
+        Списания и перемещения могут уводить остаток в минус</label>
+      <div class="grid-form" style="margin-top:14px">
+        <label class="f">Период закрыт по (включительно) <input id="st-closed" type="date" value="${s.periodClosedUntil ?? ''}"></label>
+        <label class="f">Начало учётного дня <input id="st-day" type="time" value="${(s.businessDayStart ?? '06:00').slice(0, 5)}"></label>
+      </div>
+      <p class="explain">Если период закрыт, документы с датой по эту дату нельзя создавать, проводить и распроводить.
+        Оставь поле пустым, чтобы открыть период.</p>
+      <button class="primary" id="st-save">Сохранить настройки</button>
+    </div>`;
+
+  $('#st-save').onclick = async () => {
+    const body = {
+      periodClosedUntil: $('#st-closed').value || null,
+      allowNegativeSales: $('#st-neg-sales').checked,
+      allowNegativeOther: $('#st-neg-other').checked,
+      businessDayStart: ($('#st-day').value || '06:00') + ':00'
+    };
+    try { await api('PUT', '/api/settings', body); } catch { return; }
+    toast('Сохранено', 'Настройки учёта обновлены');
+  };
+};
+
+// =====================================================================
+//  Старт
+// =====================================================================
+(async () => {
+  try { await loadCache(); }
+  catch { $('#view').innerHTML = `<h2>Нет связи с API</h2><p class="lead">Проверь, что контейнер stock-api запущен и база доступна.</p>`; return; }
+  route();
+})();
+</script>
+</body>
+</html>

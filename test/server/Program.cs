@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
@@ -16,12 +17,18 @@ builder.Services.AddScoped<PostingService>();
 builder.Services
     .AddControllers()
     .AddJsonOptions(o =>
-        // Перечисления в JSON строками, как в базе: "incoming_invoice", "goods"
+        // РџРµСЂРµС‡РёСЃР»РµРЅРёСЏ РІ JSON СЃС‚СЂРѕРєР°РјРё, РєР°Рє РІ Р±Р°Р·Рµ: "incoming_invoice", "goods"
         o.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.SnakeCaseLower)));
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
-    c.SwaggerDoc("v1", new() { Title = "Stock API — складской учёт", Version = "v1" }));
+{
+    c.SwaggerDoc("v1", new() { Title = "Stock API вЂ” СЃРєР»Р°РґСЃРєРѕР№ СѓС‡С‘С‚", Version = "v1" });
+
+    // РћРїРёСЃР°РЅРёСЏ СЂСѓС‡РµРє РёР· /// РєРѕРјРјРµРЅС‚Р°СЂРёРµРІ РІ РєРѕРЅС‚СЂРѕР»Р»РµСЂР°С…
+    var xml = Path.Combine(AppContext.BaseDirectory, $"{Assembly.GetExecutingAssembly().GetName().Name}.xml");
+    if (File.Exists(xml)) c.IncludeXmlComments(xml);
+});
 
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<DomainExceptionHandler>();
@@ -30,7 +37,11 @@ var app = builder.Build();
 
 app.UseExceptionHandler();
 
-// Сваггер включён всегда, пока это дев-проект. В проде стоит спрятать.
+// РўРµСЃС‚РѕРІР°СЏ РјРѕСЂРґР° РёР· wwwroot/index.html РѕС‚РєСЂС‹РІР°РµС‚СЃСЏ РїРѕ РєРѕСЂРЅРµРІРѕРјСѓ Р°РґСЂРµСЃСѓ
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
+// РЎРІР°РіРіРµСЂ РІРєР»СЋС‡С‘РЅ РІСЃРµРіРґР°, РїРѕРєР° СЌС‚Рѕ РґРµРІ-РїСЂРѕРµРєС‚. Р’ РїСЂРѕРґРµ СЃС‚РѕРёС‚ СЃРїСЂСЏС‚Р°С‚СЊ.
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
@@ -38,7 +49,6 @@ app.UseSwaggerUI(c =>
     c.RoutePrefix = "swagger";
 });
 
-app.MapGet("/", () => Results.Redirect("/swagger")).ExcludeFromDescription();
 app.MapControllers();
 
 app.Run();

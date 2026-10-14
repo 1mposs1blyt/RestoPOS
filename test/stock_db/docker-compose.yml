@@ -11,7 +11,9 @@ services:
     volumes:
       # скрипты отсюда Postgres выполнит сам при ПЕРВОМ запуске, по алфавиту
       - ./01_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
-      - ./02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      # - ./02_seed.sql:/docker-entrypoint-initdb.d/02_seed.sql:ro
+      # чистые справочники (единицы и один склад)...
+      - ./02_reference.sql:/docker-entrypoint-initdb.d/02_data.sql:ro
       - stock-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U stock -d stock"]
